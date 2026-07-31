@@ -1,0 +1,431 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Représente un utilisateur de l'application FILANT 225.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Nom de l'utilisateur" },
+        "phone": { "type": "string", "description": "Numéro de téléphone (identifiant unique)" },
+        "city": { "type": "string", "description": "Ville de résidence" },
+        "role": { "type": "string", "description": "Rôle de l'utilisateur (Client, Travailleur, etc.)" },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "Dernière connexion" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Date de mise à jour" },
+        "lastConnection": { "type": "string", "description": "Dernière connexion (ISO string)" },
+        "lastModeChange": { "type": "string", "format": "date-time", "description": "Dernier changement de mode" },
+        "cardDataPro": { "type": "object", "description": "Données de la carte Pro" },
+        "cardDataService": { "type": "object", "description": "Données de la carte Service" },
+        "fcmToken": { "type": "string", "description": "Token Firebase Cloud Messaging" }
+      },
+      "required": ["name", "phone", "city"]
+    },
+    "Recruitment": {
+      "title": "Recruitment",
+      "description": "Demande d'inscription professionnelle (Travailleur, Agence, etc.)",
+      "type": "object",
+      "properties": {
+        "nomPrenom": { "type": "string" },
+        "telephone": { "type": "string" },
+        "typeInscription": { "type": "string" },
+        "titre": { "type": "string" },
+        "ville": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "formation": { "type": "string" },
+        "naissance": { "type": "string" },
+        "gmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" }
+      },
+      "required": ["nomPrenom", "telephone", "typeInscription", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Message de la messagerie assistant.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "ai"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "paymentInfo": { "type": "object" },
+        "whatsAppPayload": { "type": "string" }
+      },
+      "required": ["userId", "userName", "role", "content", "timestamp"]
+    },
+    "Travailleur": {
+      "title": "Travailleur",
+      "description": "Inscription détaillée d'un travailleur.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "jobTitle": { "type": "string", "description": "Titre du métier" },
+        "fullName": { "type": "string", "description": "Nom & Prénoms" },
+        "city": { "type": "string", "description": "Ville actuelle" },
+        "phone": { "type": "string", "description": "Téléphone (SIM1)" },
+        "whatsapp": { "type": "string", "description": "Compte WhatsApp" },
+        "experience": { "type": "string", "enum": ["Appris sur le tas", "Nouveau (Formation)"] },
+        "workMode": { "type": "string", "enum": ["J'ai un local", "Travailleur ambulant"] },
+        "birthDate": { "type": "string", "description": "Date de naissance" },
+        "email": { "type": "string", "description": "Email (Gmail)" },
+        "status": { "type": "string", "enum": ["pending", "paid", "validated"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["userId", "jobTitle", "fullName", "city", "phone", "whatsapp", "experience", "workMode", "birthDate", "createdAt"]
+    },
+    "AgenceImmobiliere": {
+      "title": "AgenceImmobiliere",
+      "description": "Inscription d'une agence immobilière.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "agencyName": { "type": "string", "description": "Nom de l'agence" },
+        "managerName": { "type": "string", "description": "Nom du responsable" },
+        "city": { "type": "string", "description": "Ville actuelle" },
+        "phone": { "type": "string", "description": "Téléphone (SIM1)" },
+        "whatsapp": { "type": "string", "description": "Compte WhatsApp" },
+        "services": { "type": "array", "items": { "type": "string" }, "description": "Services proposés" },
+        "interventionZones": { "type": "string", "description": "Zones d'intervention (Facultatif)" },
+        "status": { "type": "string", "enum": ["pending", "paid", "validated"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["userId", "agencyName", "managerName", "city", "phone", "whatsapp", "services", "createdAt"]
+    },
+    "ProprietaireEquipement": {
+      "title": "ProprietaireEquipement",
+      "description": "Inscription d'un propriétaire d'équipement.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "ownerName": { "type": "string", "description": "Nom du propriétaire" },
+        "location": { "type": "string", "description": "Ville & Quartier actuels" },
+        "phone": { "type": "string", "description": "Téléphone (SIM1)" },
+        "whatsapp": { "type": "string", "description": "Compte WhatsApp" },
+        "equipmentType": { "type": "string", "description": "Type d'accessoires à louer" },
+        "dailyPrice": { "type": "number", "description": "Prix de location par jour" },
+        "description": { "type": "string", "description": "Description (Facultatif)" },
+        "status": { "type": "string", "enum": ["pending", "paid", "validated"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" },
+        "photos": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "ownerName", "location", "phone", "whatsapp", "equipmentType", "dailyPrice", "createdAt"]
+    },
+    "Entreprise": {
+      "title": "Entreprise",
+      "description": "Inscription d'une entreprise.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "companyName": { "type": "string", "description": "Nom de l'entreprise" },
+        "ownerName": { "type": "string", "description": "Nom du propriétaire" },
+        "location": { "type": "string", "description": "Lieu" },
+        "phone": { "type": "string", "description": "Téléphone (SIM1)" },
+        "whatsapp": { "type": "string", "description": "Compte WhatsApp" },
+        "proposedSalary": { "type": "string", "description": "Salaire proposé" },
+        "email": { "type": "string", "description": "Email de l'entreprise" },
+        "description": { "type": "string", "description": "Description (Facultatif)" },
+        "status": { "type": "string", "enum": ["pending", "paid", "validated"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["userId", "companyName", "ownerName", "location", "phone", "whatsapp", "proposedSalary", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Message dans une conversation privée entre l'admin et un utilisateur.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "admin"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "sender", "text", "timestamp", "read"]
+    },
+    "ScannedContact": {
+      "title": "ScannedContact",
+      "description": "Représente un contact scanné via QR code.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "scannerUserId": { "type": "string", "description": "UID de l'utilisateur qui a scanné" },
+        "scannerName": { "type": "string", "description": "Nom de l'utilisateur qui a scanné" },
+        "name": { "type": "string", "description": "Nom du contact scanné" },
+        "phone": { "type": "string", "description": "Téléphone du contact scanné" },
+        "title": { "type": "string", "description": "Titre/Profession du contact scanné" },
+        "city": { "type": "string", "description": "Ville du contact scanné" },
+        "details": { "type": "string", "description": "Détails supplémentaires" },
+        "scannedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scannerUserId", "name", "phone", "scannedAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Avis et notation d'un travailleur par un utilisateur.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "workerId": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "workerId", "rating", "createdAt"]
+    },
+    "Intervention": {
+      "title": "Intervention",
+      "description": "Historique d'une intervention de service.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "workerId": { "type": "string" },
+        "workerName": { "type": "string" },
+        "serviceType": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "cancelled"] },
+        "date": { "type": "string", "format": "date-time" },
+        "price": { "type": "number" }
+      },
+      "required": ["userId", "workerId", "workerName", "serviceType", "status", "date"]
+    },
+    "Availability": {
+      "title": "Availability",
+      "description": "Disponibilité d'un travailleur pour une date spécifique.",
+      "type": "object",
+      "properties": {
+        "workerId": { "type": "string" },
+        "date": { "type": "string", "description": "Format YYYY-MM-DD" },
+        "slots": { "type": "array", "items": { "type": "string" }, "description": "Liste des créneaux horaires (ex: 08:00)" }
+      },
+      "required": ["workerId", "date", "slots"]
+    },
+    "Inscription": {
+      "title": "Inscription",
+      "description": "Données d'une nouvelle inscription multi-catégorie.",
+      "type": "object",
+      "properties": {
+        "profileType": { "type": "string", "enum": ["Travailleur", "Propriétaire", "Agence", "Entreprise"] },
+        "name": { "type": "string" },
+        "city": { "type": "string" },
+        "phone": { "type": "string" },
+        "details": { "type": "object" },
+        "status": { "type": "string", "enum": ["pending", "validated", "rejected"] },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["profileType", "name", "city", "phone", "adminReadStatus", "timestamp"]
+    },
+    "QRCodeActivation": {
+      "title": "QRCodeActivation",
+      "description": "Gestion de l'activation des codes QR professionnels.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "status": { "type": "string", "enum": ["Activé", "Désactivé"] },
+        "activationDate": { "type": "string", "format": "date-time" },
+        "expiryDate": { "type": "string", "format": "date-time" },
+        "fraisDossierPayes": { "type": "boolean" },
+        "lastPaymentAmount": { "type": "number" },
+        "profileType": { "type": "string" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] }
+      },
+      "required": ["userId", "name", "phone", "city", "status", "adminReadStatus"]
+    },
+    "Mission": {
+      "title": "Mission",
+      "description": "Mission envoyée par un admin à un utilisateur.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ENVOYÉ", "MISSION EN COURS", "MISSION EFFECTUÉE"] },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "userId", "status", "adminReadStatus", "timestamp"]
+    },
+    "ServiceRequest": {
+      "title": "ServiceRequest",
+      "description": "Une demande de service soumise par un client.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "serviceTitle": { "type": "string" },
+        "formType": { "type": "string" },
+        "answers": { "type": "object" },
+        "totalPrice": { "type": "string" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "phone", "city", "serviceTitle", "formType", "answers", "adminReadStatus", "timestamp"]
+    },
+    "Connexion": {
+      "title": "Connexion",
+      "description": "Enregistrement d'une connexion utilisateur.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "phone", "adminReadStatus", "timestamp"]
+    },
+    "ScannedHistory": {
+      "title": "ScannedHistory",
+      "description": "Historique des scans de QR code.",
+      "type": "object",
+      "properties": {
+        "scannerUser": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "syncedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["scannerUser", "name", "phone", "adminReadStatus", "syncedAt"]
+    },
+    "StageApplication": {
+      "title": "StageApplication",
+      "description": "Candidature pour un stage professionnel.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "category": { "type": "string" },
+        "domain": { "type": "string" },
+        "title": { "type": "string" },
+        "answers": { "type": "object" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "phone", "city", "category", "domain", "title", "answers", "adminReadStatus", "timestamp"]
+    },
+    "FormationApplication": {
+      "title": "FormationApplication",
+      "description": "Inscription pour une formation professionnelle.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "phone": { "type": "string" },
+        "city": { "type": "string" },
+        "category": { "type": "string" },
+        "domain": { "type": "string" },
+        "title": { "type": "string" },
+        "answers": { "type": "object" },
+        "adminReadStatus": { "type": "string", "enum": ["NON LU", "VU"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "phone", "city", "category", "domain", "title", "answers", "adminReadStatus", "timestamp"]
+    },
+    "Disponible": {
+      "title": "Disponible",
+      "description": "Nouveau professionnel de la section Disponible.",
+      "type": "object",
+      "properties": {
+        "titre": { "type": "string", "description": "Titre du métier disponible" },
+        "image": { "type": "string", "description": "Lien de la photo de présentation" },
+        "description": { "type": "string", "description": "Description de l'activité/service" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Date de création de l'enregistrement" }
+      },
+      "required": ["titre", "image", "description", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{phone}": {
+      "schema": "User",
+      "description": "Collection des utilisateurs enregistrés."
+    },
+    "/recruitments/{id}": {
+      "schema": "Recruitment",
+      "description": "Collection des demandes d'inscription professionnelle."
+    },
+    "/messages/{id}": {
+      "schema": "Message",
+      "description": "Collection des messages de chat."
+    },
+    "/travailleurs/{id}": {
+      "schema": "Travailleur",
+      "description": "Collection des inscriptions détaillées des travailleurs."
+    },
+    "/agences/{id}": {
+      "schema": "AgenceImmobiliere",
+      "description": "Collection des inscriptions des agences immobilières."
+    },
+    "/proprietaires/{id}": {
+      "schema": "ProprietaireEquipement",
+      "description": "Collection des inscriptions des propriétaires d'équipement."
+    },
+    "/entreprises/{id}": {
+      "schema": "Entreprise",
+      "description": "Collection des inscriptions des entreprises."
+    },
+    "/Chats/{userId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Collection des messages de chat privé entre admin et utilisateur."
+    },
+    "/scanned_contacts/{id}": {
+      "schema": "ScannedContact",
+      "description": "Collection des contacts scannés par les utilisateurs."
+    },
+    "/reviews/{id}": {
+      "schema": "Review",
+      "description": "Collection des avis et notations."
+    },
+    "/interventions/{id}": {
+      "schema": "Intervention",
+      "description": "Collection de l'historique des interventions."
+    },
+    "/availabilities/{id}": {
+      "schema": "Availability",
+      "description": "Collection des disponibilités des travailleurs."
+    },
+    "/Inscriptions/{id}": {
+      "schema": "Inscription",
+      "description": "Nouvelles inscriptions provenant de l'interface Site."
+    },
+    "/QRCodeActivations/{id}": {
+      "schema": "QRCodeActivation",
+      "description": "Collection pour la gestion des activations QR Code."
+    },
+    "/Missions/{id}": {
+      "schema": "Mission",
+      "description": "Collection des missions envoyées aux utilisateurs."
+    },
+    "/ServiceRequests/{id}": {
+      "schema": "ServiceRequest",
+      "description": "Collection des demandes de services soumises par les clients."
+    },
+    "/Stage/{id}": {
+      "schema": "StageApplication",
+      "description": "Candidatures aux stages d'apprentissage professionnel."
+    },
+    "/Formation/{id}": {
+      "schema": "FormationApplication",
+      "description": "Inscriptions aux formations professionnelles."
+    },
+    "/Disponible/{id}": {
+      "schema": "Disponible",
+      "description": "Collection des nouveaux éléments de la section Disponible."
+    }
+  }
+}

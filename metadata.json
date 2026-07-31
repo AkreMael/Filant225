@@ -1,0 +1,11 @@
+{
+  "name": "FILANT°225",
+  "description": "Plateforme de services (offres, travailleurs, urgence, position, carte, etc.)",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

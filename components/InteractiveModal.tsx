@@ -1,0 +1,38 @@
+
+import React from 'react';
+import { User } from '../types';
+import { Answers } from './common/formDefinitions';
+import EmbeddedForm from './EmbeddedForm';
+
+interface InteractiveModalProps {
+  title: string;
+  formType: 'worker' | 'location' | 'personal_worker' | 'personal_location' | 'night_service' | 'rapid_building_service' | 'stage' | 'formation' | 'simple_demande';
+  user: User;
+  onClose: () => void;
+  imageUrl?: string | string[];
+  isBlurredImage?: boolean;
+  description?: string;
+  price?: string;
+  onComplete?: (answers: Answers) => void;
+  initialAnswers?: Answers;
+  onShowPopup?: (
+    message: string, 
+    type: 'alert' | 'confirm', 
+    onConfirm?: (close: () => void, setLoading: (l: boolean) => void) => void,
+    confirmLabel?: string,
+    cancelLabel?: string,
+    title?: string
+  ) => void;
+  onGoToMenu?: () => void;
+  onRegisterBackHandler?: (handler: (() => boolean) | null) => void;
+}
+
+const InteractiveModal: React.FC<InteractiveModalProps> = (props) => {
+  return (
+    <EmbeddedForm 
+        {...props} 
+    />
+  );
+};
+
+export default InteractiveModal;
