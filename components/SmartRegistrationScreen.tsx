@@ -958,11 +958,13 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                       {paymentInitiated ? 'Redirection Wave...' : 'Payer les frais (310 FCFA)'}
                       {!paymentInitiated && <ArrowRight className="w-5 h-5" />}
                     </button>
-                    <WhatsAppPaymentSupportButton
-                      serviceName={`Frais de dossier Inscription (${selectedProfile || 'Utilisateur'})`}
-                      amount="310"
-                      waveLink="https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310"
-                    />
+                    {paymentInitiated && (
+                      <WhatsAppPaymentSupportButton
+                        serviceName={`Frais de dossier Inscription (${selectedProfile || 'Utilisateur'})`}
+                        amount="310"
+                        waveLink="https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310"
+                      />
+                    )}
                     <button
                       type="button"
                       onClick={handleModify}

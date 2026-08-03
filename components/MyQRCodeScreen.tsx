@@ -21,9 +21,14 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
   const [loading, setLoading] = useState(true);
   const [showMissions, setShowMissions] = useState(false);
   const [missions, setMissions] = useState<any[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
 
   useEffect(() => {
     if (!user.phone) return;
+
+    const unsubPending = databaseService.subscribeToUserPendingPayments(user.phone, (payments) => {
+      setPendingPayments(payments);
+    });
     
     const getPhoneVariants = (phoneVal: string): string[] => {
       if (!phoneVal) return [];
@@ -113,6 +118,7 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
     });
 
     return () => {
+      unsubPending();
       unsubscribe();
       unsubMissions();
     };
@@ -193,6 +199,18 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
   };
 
   const step = getStepNumber();
+
+  const activePendingForCurrentStep = useMemo(() => {
+    if (!pendingPayments || pendingPayments.length === 0) return null;
+    if (step === 2) {
+      return pendingPayments.find(p => p.amount == 310 || p.paymentType === 'Inscription' || (p.title && p.title.includes('310')));
+    } else if (step === 3) {
+      return pendingPayments.find(p => p.amount == 7100 || p.paymentType === 'Activation' || (p.title && (p.title.includes('7100') || p.title.includes('7 100'))));
+    } else if (step === 5) {
+      return pendingPayments.find(p => p.amount == 500 || p.paymentType === 'Renouvellement' || (p.title && p.title.includes('500')));
+    }
+    return null;
+  }, [pendingPayments, step]);
 
   const handleAction = () => {
       if (step === 1) {
@@ -286,25 +304,32 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
                       </p>
                     )
                   )}
-                  {currentStatus.toLowerCase().includes('attente') && (
+                  {activePendingForCurrentStep && (
                     <div className="mt-3">
                       <WhatsAppPaymentSupportButton
                         serviceName={
-                          currentStatus.includes('310') ? "Frais de dossier Inscription" :
-                          currentStatus.includes('7 100') || currentStatus.includes('7100') ? "Activation Code QR Professionnel" :
-                          currentStatus.includes('500') ? "Renouvellement Carte FILANT°225" :
-                          "Validation Paiement FILANT°225"
+                          activePendingForCurrentStep.title ||
+                          activePendingForCurrentStep.serviceType ||
+                          activePendingForCurrentStep.paymentType ||
+                          (step === 2 ? "Frais de dossier Inscription" :
+                           step === 3 ? "Activation Code QR Professionnel" :
+                           step === 5 ? "Renouvellement Carte FILANT°225" :
+                           "Validation Paiement FILANT°225")
                         }
                         amount={
-                          currentStatus.includes('310') ? 310 :
-                          currentStatus.includes('7 100') || currentStatus.includes('7100') ? 7100 :
-                          currentStatus.includes('500') ? 500 :
-                          0
+                          activePendingForCurrentStep.amount || (
+                            step === 2 ? 310 :
+                            step === 3 ? 7100 :
+                            step === 5 ? 500 : 0
+                          )
                         }
+                        paymentRef={activePendingForCurrentStep.rtdbPath || activePendingForCurrentStep.id}
                         waveLink={
-                          currentStatus.includes('310') ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310" :
-                          currentStatus.includes('7 100') || currentStatus.includes('7100') ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100" :
-                          "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=500"
+                          activePendingForCurrentStep.waveLink || (
+                            step === 2 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310" :
+                            step === 3 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100" :
+                            "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=500"
+                          )
                         }
                       />
                     </div>
