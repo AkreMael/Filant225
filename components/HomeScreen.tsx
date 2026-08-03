@@ -1038,6 +1038,47 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   const [isLoadingServices, setIsLoadingServices] = useState(false);
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
+  const [profileImage, setProfileImage] = useState<string | null>(() => {
+    if (!user?.phone) return null;
+    return localStorage.getItem(`filant_profile_image_${user.phone}`);
+  });
+
+  useEffect(() => {
+    if (!user?.phone) return;
+    const phone = user.phone;
+
+    const loadProfileImage = () => {
+      const stored = localStorage.getItem(`filant_profile_image_${phone}`);
+      setProfileImage(stored || null);
+    };
+
+    loadProfileImage();
+
+    const handleCustomUpdate = (e: CustomEvent) => {
+      if (!e.detail?.phone || e.detail?.phone === phone) {
+        if (e.detail?.imageUrl !== undefined) {
+          setProfileImage(e.detail.imageUrl);
+        } else {
+          loadProfileImage();
+        }
+      }
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === `filant_profile_image_${phone}`) {
+        setProfileImage(e.newValue);
+      }
+    };
+
+    window.addEventListener('filant-profile-image-updated' as any, handleCustomUpdate);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('filant-profile-image-updated' as any, handleCustomUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [user?.phone]);
+
   useEffect(() => {
     if (!user?.phone) return;
     const unsubscribe = databaseService.subscribeToUserProfileType(user.phone, (type) => {
@@ -1362,8 +1403,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                         className="flex items-center gap-2 text-left focus:outline-none group active:scale-95 transition-all bg-slate-100/90 hover:bg-slate-200/90 dark:bg-slate-800/80 px-2.5 py-1 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-xs max-w-full"
                     >
                          <div className="p-[2px] bg-gradient-to-tr from-orange-500 via-amber-300 to-white rounded-full shadow-sm shrink-0">
-                             <div className="w-7.5 h-7.5 rounded-full flex items-center justify-center bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
-                                 <ProfileIcon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                             <div className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-400 overflow-hidden">
+                                 {profileImage ? (
+                                     <img 
+                                         src={profileImage} 
+                                         alt={liveUser?.name || 'Profil'} 
+                                         className="w-full h-full object-cover rounded-full" 
+                                     />
+                                 ) : (
+                                     <ProfileIcon className="w-4.5 h-4.5 text-slate-600 dark:text-slate-300" />
+                                 )}
                              </div>
                          </div>
                          <div className="flex flex-col min-w-0 leading-tight">

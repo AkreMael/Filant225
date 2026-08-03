@@ -6,6 +6,7 @@ import { databaseService, SavedContact } from '../services/databaseService';
 import { imageService } from '../services/imageService';
 import { getQuestionsForType, generateWhatsAppMessage } from './common/formDefinitions';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
+import { ImageCropperModal } from './common/ImageCropperModal';
 
 // --- PROPS ---
 interface ProfileScreenProps {
@@ -46,31 +47,26 @@ const PhotoIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="h
 const UsersIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
 
 // --- HELPERS ---
-const ProfileAvatar = ({ imageUrl, onUpload, isLocked }: { imageUrl?: string | null, onUpload: () => void, isLocked: boolean }) => (
+const ProfileAvatar = ({ imageUrl, onUpload }: { imageUrl?: string | null, onUpload: () => void }) => (
     <div className="relative">
-        <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm relative">
-            {imageUrl ? (
-                <img src={imageUrl} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 mt-2" viewBox="0 0 24 24" fill="currentColor">
-                    <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 a4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
-                </svg>
-            )}
+        <div className="p-[3px] bg-gradient-to-tr from-orange-500 via-amber-300 to-white rounded-full shadow-md">
+            <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-inner">
+                {imageUrl ? (
+                    <img src={imageUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 text-slate-400 mt-2" viewBox="0 0 24 24" fill="currentColor">
+                        <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 a4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
+                    </svg>
+                )}
+            </div>
         </div>
         <button 
-            onClick={isLocked ? undefined : onUpload}
-            disabled={isLocked}
-            className={`absolute bottom-0 right-0 w-7 h-7 rounded-full border-2 border-white flex items-center justify-center shadow-md transition-all ${isLocked ? 'bg-green-500 cursor-default scale-110' : 'bg-blue-600 text-white active:scale-90 hover:bg-blue-700'}`}
+            type="button"
+            onClick={onUpload}
+            className="absolute bottom-0 right-0 w-8 h-8 rounded-full border-2 border-white bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-lg transition-all active:scale-90"
+            title="Modifier la photo de profil"
         >
-            {isLocked ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-            ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-            )}
+            <CameraIcon className="h-4 w-4 text-white" />
         </button>
     </div>
 );
@@ -244,24 +240,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       touchStartX.current = null;
   };
 
+  const [selectedRawImageForCrop, setSelectedRawImageForCrop] = useState<string | null>(null);
+
   const [profileImage, setProfileImage] = useState<string | null>(() => {
       if (!user?.phone) return null;
       const stored = localStorage.getItem(`${PROFILE_IMAGE_KEY_PREFIX}${user.phone}`);
-      const storedTs = localStorage.getItem(`${PROFILE_TS_KEY_PREFIX}${user.phone}`);
-      if (storedTs) {
-          const ts = parseInt(storedTs);
-          if (Date.now() - ts < ONE_MONTH_MS) return stored; 
-      }
-      return stored;
+      return stored || null;
   });
-
-  const isProfileLocked = React.useMemo(() => {
-    if (!user?.phone) return false;
-    const storedTs = localStorage.getItem(`${PROFILE_TS_KEY_PREFIX}${user.phone}`);
-    if (!storedTs || !profileImage) return false;
-    const ts = parseInt(storedTs);
-    return (Date.now() - ts) < ONE_MONTH_MS;
-  }, [user?.phone, profileImage]);
 
   useEffect(() => {
     let unsubWallet = () => {};
@@ -311,18 +296,26 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
     setTimeout(onClose, 300);
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (isProfileLocked) return;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    onShowPopup("Compression et envoi de l'image sur Firebase...", "alert");
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setSelectedRawImageForCrop(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleSaveCroppedImage = async (croppedDataUrl: string) => {
+    setSelectedRawImageForCrop(null);
+    onShowPopup("Compression et enregistrement de l'image...", "alert");
     
     try {
-      // 1. Compress image
-      const compressedBase64 = await imageService.compressImage(file, 800, 0.7);
-      
-      // 2. Upload to Firebase Storage and update Firestore
+      const compressedBase64 = await imageService.compressImage(croppedDataUrl, 600, 0.85);
       const downloadUrl = await databaseService.uploadUserProfileImage(user.phone, compressedBase64);
       
       if (downloadUrl) {
@@ -330,6 +323,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
           setProfileImage(downloadUrl);
           localStorage.setItem(`${PROFILE_IMAGE_KEY_PREFIX}${user.phone}`, downloadUrl);
           localStorage.setItem(`${PROFILE_TS_KEY_PREFIX}${user.phone}`, now.toString());
+
+          // Dispatch custom event for real-time synchronization across header/menu components
+          window.dispatchEvent(new CustomEvent('filant-profile-image-updated', {
+              detail: { phone: user.phone, imageUrl: downloadUrl }
+          }));
+
           onShowPopup("Photo de profil mise à jour avec succès !", "alert");
       } else {
           onShowPopup("Erreur lors de l'envoi de l'image.", "alert");
@@ -390,7 +389,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
             <h1 className="flex-1 text-center font-black uppercase text-base tracking-tight mr-10">Mon Espace Profil</h1>
         </header>
         <div className="flex flex-col items-center justify-center pt-5 pb-5 px-4 bg-white shadow-sm mb-4">
-            <ProfileAvatar imageUrl={profileImage} onUpload={() => fileInputRef.current?.click()} isLocked={isProfileLocked} />
+            <ProfileAvatar imageUrl={profileImage} onUpload={() => fileInputRef.current?.click()} />
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
             <div className="flex items-center gap-1.5 mt-3">
                 <h1 className="text-xl font-black text-gray-900 capitalize tracking-tight">{user.name || 'Utilisateur'}</h1>
@@ -926,6 +925,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
         </div>
         {showScanner && <ScannerOverlay onScan={handleScanResult} onClose={() => setShowScanner(false)} />}
         {showIdModal && renderIdModal()}
+        {selectedRawImageForCrop && (
+          <ImageCropperModal
+            imageSrc={selectedRawImageForCrop}
+            onCropSave={handleSaveCroppedImage}
+            onCancel={() => setSelectedRawImageForCrop(null)}
+          />
+        )}
     </div>
   );
 };

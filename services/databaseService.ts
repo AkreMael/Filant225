@@ -411,11 +411,11 @@ export const databaseService = {
     
     try {
       await databaseService.ensureAuth();
-      const docSnap = await withTimeout(getDoc(userRef));
+      const docSnap = await withTimeout(getDoc(userRef), 3000);
       if (docSnap.exists()) {
         const data = docSnap.data();
         // Strict verification: Name must match (case insensitive)
-        if (data.name.trim().toLowerCase() === name.trim().toLowerCase()) {
+        if (data.name && data.name.trim().toLowerCase() === name.trim().toLowerCase()) {
             return {
               name: data.name,
               phone: data.phone,
@@ -425,7 +425,7 @@ export const databaseService = {
         }
       }
     } catch (e) {
-      console.error("Error in getUserFromFirestore:", e);
+      console.warn("Offline or timeout in getUserFromFirestore:", e);
     }
     return null;
   },
@@ -440,15 +440,19 @@ export const databaseService = {
           const adminCollections = ['Admin', 'Clients'];
           for (const col of adminCollections) {
               const userRef = doc(db, col, sanitizedPhone);
-              const docSnap = await getDoc(userRef);
-              if (docSnap.exists()) {
-                 const data = docSnap.data();
-                 localStorage.setItem(`filant_user_collection_${sanitizedPhone}`, col);
-                 return {
-                    id: docSnap.id,
-                    phone: data.phone || docSnap.id,
-                    ...data
-                 } as User;
+              try {
+                const docSnap = await withTimeout(getDoc(userRef), 2500);
+                if (docSnap.exists()) {
+                   const data = docSnap.data();
+                   localStorage.setItem(`filant_user_collection_${sanitizedPhone}`, col);
+                   return {
+                      id: docSnap.id,
+                      phone: data.phone || docSnap.id,
+                      ...data
+                   } as User;
+                }
+              } catch (err) {
+                console.warn(`[Firestore Offline/Timeout] Admin check in ${col}:`, err);
               }
           }
       }
@@ -457,30 +461,38 @@ export const databaseService = {
       const cachedCol = localStorage.getItem(`filant_user_collection_${sanitizedPhone}`);
       if (cachedCol) {
           const userRef = doc(db, cachedCol, sanitizedPhone);
-          const docSnap = await getDoc(userRef);
-          if (docSnap.exists()) {
-             const data = docSnap.data();
-             return {
-                id: docSnap.id,
-                phone: data.phone || docSnap.id,
-                ...data
-             } as User;
+          try {
+            const docSnap = await withTimeout(getDoc(userRef), 2500);
+            if (docSnap.exists()) {
+               const data = docSnap.data();
+               return {
+                  id: docSnap.id,
+                  phone: data.phone || docSnap.id,
+                  ...data
+               } as User;
+            }
+          } catch (err) {
+            console.warn(`[Firestore Offline/Timeout] Cached col check in ${cachedCol}:`, err);
           }
       }
 
       const collections = ['Clients', 'Travailleurs', 'Agences immobilières', 'Équipements', 'Entreprises', 'Admin'];
       
       const promises = collections.map(async (col) => {
-          const userRef = doc(db, col, sanitizedPhone);
-          const docSnap = await getDoc(userRef);
-          if (docSnap.exists()) {
-             const data = docSnap.data();
-             return {
-                id: docSnap.id,
-                phone: data.phone || docSnap.id,
-                colName: col,
-                ...data
-             } as unknown as User;
+          try {
+            const userRef = doc(db, col, sanitizedPhone);
+            const docSnap = await withTimeout(getDoc(userRef), 3000);
+            if (docSnap.exists()) {
+               const data = docSnap.data();
+               return {
+                  id: docSnap.id,
+                  phone: data.phone || docSnap.id,
+                  colName: col,
+                  ...data
+               } as unknown as User;
+            }
+          } catch (colErr) {
+            console.warn(`[Firestore Offline/Timeout] Collection ${col} check:`, colErr);
           }
           return null;
       });
@@ -488,24 +500,29 @@ export const databaseService = {
       const results = await Promise.all(promises);
       const validUsers = results.filter((u): u is User => u !== null);
       
-      if (validUsers.length === 0) return null;
+      if (validUsers.length > 0) {
+        // Prioritize the user with the most filled standard fields (name and city)
+        const bestUser = validUsers.sort((a, b) => {
+            const scoreA = (a.name && !["Utilisateur", "Inconnu"].includes(a.name) ? 2 : 0) + (a.city && !["Non spécifiée", "N/A"].includes(a.city) ? 1 : 0);
+            const scoreB = (b.name && !["Utilisateur", "Inconnu"].includes(b.name) ? 2 : 0) + (b.city && !["Non spécifiée", "N/A"].includes(b.city) ? 1 : 0);
+            return scoreB - scoreA;
+        })[0];
 
-      // Prioritize the user with the most filled standard fields (name and city)
-      const bestUser = validUsers.sort((a, b) => {
-          const scoreA = (a.name && !["Utilisateur", "Inconnu"].includes(a.name) ? 2 : 0) + (a.city && !["Non spécifiée", "N/A"].includes(a.city) ? 1 : 0);
-          const scoreB = (b.name && !["Utilisateur", "Inconnu"].includes(b.name) ? 2 : 0) + (b.city && !["Non spécifiée", "N/A"].includes(b.city) ? 1 : 0);
-          return scoreB - scoreA;
-      })[0];
+        if (bestUser && (bestUser as any).colName) {
+            localStorage.setItem(`filant_user_collection_${sanitizedPhone}`, (bestUser as any).colName);
+        }
 
-      if (bestUser && (bestUser as any).colName) {
-          localStorage.setItem(`filant_user_collection_${sanitizedPhone}`, (bestUser as any).colName);
+        return bestUser;
       }
-
-      return bestUser;
       
     } catch (e) {
-      console.error("Error in getUserByPhoneFromFirestore:", e);
+      console.warn("Offline or timeout in getUserByPhoneFromFirestore:", e);
     }
+
+    // Fallback to local storage user if offline or doc not found in remote
+    const localUser = databaseService.getUserByPhoneFromLocalStorage(sanitizedPhone);
+    if (localUser) return localUser;
+
     return null;
   },
 

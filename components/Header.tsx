@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Tab } from '../types';
 
 const HeartIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 016.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z" /></svg>;
@@ -12,6 +12,47 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ user, onToggleProfile, setActiveTab }) => {
+    const [profileImage, setProfileImage] = useState<string | null>(() => {
+        if (!user?.phone) return null;
+        return localStorage.getItem(`filant_profile_image_${user.phone}`);
+    });
+
+    useEffect(() => {
+        if (!user?.phone) return;
+        const phone = user.phone;
+
+        const loadProfileImage = () => {
+            const stored = localStorage.getItem(`filant_profile_image_${phone}`);
+            setProfileImage(stored || null);
+        };
+
+        loadProfileImage();
+
+        const handleCustomUpdate = (e: CustomEvent) => {
+            if (!e.detail?.phone || e.detail?.phone === phone) {
+                if (e.detail?.imageUrl !== undefined) {
+                    setProfileImage(e.detail.imageUrl);
+                } else {
+                    loadProfileImage();
+                }
+            }
+        };
+
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === `filant_profile_image_${phone}`) {
+                setProfileImage(e.newValue);
+            }
+        };
+
+        window.addEventListener('filant-profile-image-updated' as any, handleCustomUpdate);
+        window.addEventListener('storage', handleStorageChange);
+
+        return () => {
+            window.removeEventListener('filant-profile-image-updated' as any, handleCustomUpdate);
+            window.removeEventListener('storage', handleStorageChange);
+        };
+    }, [user?.phone]);
+
     return (
         <header className="bg-white dark:bg-slate-800 p-4 shadow-md z-10 text-gray-800 dark:text-gray-200">
             <div className="flex justify-between items-center">
@@ -27,7 +68,17 @@ const Header: React.FC<HeaderProps> = ({ user, onToggleProfile, setActiveTab }) 
                 </div>
                 <div className="flex items-center space-x-2">
                     <button className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"><HeartIcon /></button>
-                    <button onClick={onToggleProfile} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700"><UserCircleIcon /></button>
+                    <button onClick={onToggleProfile} className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-transform active:scale-95">
+                        <div className="p-[2px] bg-gradient-to-tr from-orange-500 via-amber-300 to-white rounded-full shadow-sm shrink-0">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-200/80 dark:bg-slate-700 text-slate-500 dark:text-slate-400 overflow-hidden">
+                                {profileImage ? (
+                                    <img src={profileImage} alt={user.name} className="w-full h-full object-cover rounded-full" />
+                                ) : (
+                                    <UserCircleIcon />
+                                )}
+                            </div>
+                        </div>
+                    </button>
                 </div>
             </div>
             <div className="flex justify-between items-center mt-4">
