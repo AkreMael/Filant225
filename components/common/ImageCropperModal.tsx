@@ -220,17 +220,18 @@ export const ImageCropperModal: React.FC<ImageCropperModalProps> = ({
 
                     {/* Circular Mask Overlay */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                        {/* Darkened semi-transparent backdrop with circular hole cutout */}
+                        {/* Darkened semi-transparent backdrop outside the circular frame */}
                         <div
-                            className="w-[240px] h-[240px] rounded-full ring-[999px] ring-black/60 relative flex items-center justify-center"
+                            className="w-[240px] h-[240px] rounded-full relative flex items-center justify-center pointer-events-none"
                             style={{
-                                boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.75)',
+                                boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.70)',
                             }}
                         >
-                            {/* Stylish orange & white gradient ring contour around profile circle */}
-                            <div className="absolute inset-0 rounded-full p-[3px] bg-gradient-to-tr from-orange-500 via-amber-300 to-white shadow-lg pointer-events-none">
-                                <div className="w-full h-full rounded-full border border-dashed border-white/50" />
-                            </div>
+                            {/* Thin, crisp ring outline around profile crop circle */}
+                            <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_15px_rgba(249,115,22,0.4)] pointer-events-none" />
+                            {/* Discrete crosshair guidelines for face centering */}
+                            <div className="absolute w-full h-[1px] bg-white/25 pointer-events-none" />
+                            <div className="absolute h-full w-[1px] bg-white/25 pointer-events-none" />
                         </div>
                     </div>
                 </div>
