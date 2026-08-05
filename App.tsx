@@ -285,7 +285,7 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
   const [hasCompletedFirstLaunch, setHasCompletedFirstLaunch] = useState(() => {
-      return localStorage.getItem('filant_has_selected_profile') === 'true';
+      return localStorage.getItem('filant_terms_accepted') === 'true' || localStorage.getItem('filant_has_selected_profile') === 'true';
   });
 
   // RAW states (do not push to history when set directly during popping/restoring)
@@ -711,6 +711,8 @@ const App: React.FC = () => {
     localStorage.removeItem('filant_currentUserPhone');
     localStorage.removeItem('filant_user_role');
     localStorage.removeItem('filant_has_selected_profile');
+    localStorage.removeItem('filant_terms_accepted');
+    setHasCompletedFirstLaunch(false);
     setNavHistory([]);
     setActiveTab(Tab.Menu);
     setMenuView('hub');
