@@ -2982,6 +2982,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                     </div>
                  </div>
 
+                 {/* Photos gallery view (up to 3 photos) */}
+                 {((selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0) || selectedItemForDetails.profileImageUrl || selectedItemForDetails.imageLink) && (
+                   <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
+                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                       <span>📷 PHOTOS DU PROFIL / ACTIVITÉ</span>
+                       <span className="text-blue-600 font-bold">
+                         {(selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0 ? selectedItemForDetails.photos.length : 1)} photo(s)
+                       </span>
+                     </p>
+                     <div className="grid grid-cols-3 gap-3">
+                       {(selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0 
+                         ? selectedItemForDetails.photos 
+                         : [selectedItemForDetails.profileImageUrl || selectedItemForDetails.imageLink]
+                       ).filter(Boolean).map((imgUrl: string, idx: number) => (
+                         <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
+                           <img src={imgUrl} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                           <div className="absolute bottom-1 left-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm">
+                             #{idx + 1}
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   </div>
+                 )}
+
                  {/* Admin Image Link Edit Section */}
                  {(selectedItemForDetails.profileType || selectedItemForDetails.typeInscription) && (
                    <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-dashed border-gray-300 dark:border-slate-800/90 space-y-3">

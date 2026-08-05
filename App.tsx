@@ -1586,6 +1586,7 @@ const App: React.FC = () => {
               handleTabChange(tab);
             }}
             initialQuery={demandeRechercheInitialQuery}
+            onShowRegistration={() => setShowSmartRegistration(true)}
           />;
           break;
         case 'admin_dashboard':

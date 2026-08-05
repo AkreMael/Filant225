@@ -15,9 +15,11 @@ import {
   Briefcase,
   CheckCircle2,
   Camera,
-  Upload
+  Upload,
+  X
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
+import { imageService } from '../services/imageService';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
 
 interface SmartRegistrationScreenProps {
@@ -53,12 +55,14 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     city: currentUser?.city || '', 
     phone: currentUser?.phone || '',
     profileImageUrl: currentUser?.profileImageUrl || '',
+    photos: [] as string[],
     // Travailleur
     job: '',
     learnedFrom: '' as 'Sur le tas' | 'Formation professionnelle' | 'Diplôme' | '',
     availability: '',
     movementZone: '',
     skillsDescription: '',
+    salary: '',
     // Propriétaire
     equipmentType: '',
     equipmentCategory: '',
@@ -90,6 +94,60 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [isCompressingPhotos, setIsCompressingPhotos] = useState(false);
+
+  const handlePhotosSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const currentPhotos = formData.photos || [];
+    if (currentPhotos.length >= 3) {
+      alert("Vous pouvez ajouter jusqu'à 3 photos maximum.");
+      return;
+    }
+
+    const remainingSlots = 3 - currentPhotos.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+
+    setIsCompressingPhotos(true);
+    const newPhotos: string[] = [];
+    
+    for (const f of filesToProcess) {
+      const file = f as File;
+      try {
+        const compressed = await imageService.compressImage(file, 800, 0.75);
+        newPhotos.push(compressed);
+      } catch (err) {
+        console.error("Error compressing photo:", err);
+        const fallback = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        newPhotos.push(fallback);
+      }
+    }
+
+    const updatedPhotos = [...currentPhotos, ...newPhotos].slice(0, 3);
+    setFormData(prev => ({
+      ...prev,
+      photos: updatedPhotos,
+      profileImageUrl: prev.profileImageUrl || updatedPhotos[0] || ''
+    }));
+    setIsCompressingPhotos(false);
+    e.target.value = '';
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setFormData(prev => {
+      const updated = (prev.photos || []).filter((_, i) => i !== index);
+      return {
+        ...prev,
+        photos: updated,
+        profileImageUrl: updated[0] || ''
+      };
+    });
+  };
 
   const handleBackWithConfirmation = () => {
     const hasStarted = step > 1 || formData.name !== '' || formData.city !== '' || formData.job !== '' || formData.equipmentType !== '' || formData.agencyName !== '' || formData.companyName !== '';
@@ -288,7 +346,8 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     }, 20000);
 
     try {
-        let currentProfileImageUrl = formData.profileImageUrl;
+        const firstPhoto = formData.photos && formData.photos.length > 0 ? formData.photos[0] : '';
+        let currentProfileImageUrl = firstPhoto || formData.profileImageUrl || '';
 
         const inscriptionData: any = {
           profileType: selectedProfile,
@@ -296,6 +355,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
           city: formData.city,
           phone: formData.phone,
           profileImageUrl: currentProfileImageUrl,
+          photos: formData.photos || [],
           registrationStatus: 'pending',
           submissionType: 'SmartRegistration',
           submittedAt: new Date().toISOString(),
@@ -304,7 +364,9 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               learnedFrom: formData.learnedFrom,
               availability: formData.availability,
               movementZone: formData.movementZone,
-              skillsDescription: formData.skillsDescription
+              skillsDescription: formData.skillsDescription,
+              salary: formData.salary || '',
+              pretentionSalariale: formData.salary || ''
           }),
           ...(selectedProfile === 'Propriétaire' && {
               equipmentType: formData.equipmentType,
@@ -514,6 +576,20 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                 }}
                 placeholder="Décrivez vos compétences..."
                 className={`${getInputClass('skillsDescription')} min-h-[80px]`}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Prétention salariale ou Tarif *</label>
+              <input 
+                id="salary"
+                type="text"
+                value={formData.salary}
+                onChange={(e) => {
+                    setFormData({...formData, salary: e.target.value});
+                    if (errors.includes('salary')) setErrors(errors.filter(e => e !== 'salary'));
+                }}
+                placeholder="Ex: 5 000 FCFA / jour ou 150 000 FCFA / mois"
+                className={getInputClass('salary')}
               />
             </div>
           </div>
@@ -1060,6 +1136,67 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                   <h4 className="text-slate-800 font-black text-xs uppercase tracking-[0.2em] mb-4">Spécificités {selectedProfile}</h4>
 
                   {renderCategoryFields()}
+
+                  {/* Photos Upload Section (Up to 3 photos) */}
+                  <div className="mt-6 pt-6 border-t border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-[11px] font-black text-slate-800 uppercase tracking-[0.15em] flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-blue-600" />
+                        <span>Photos de votre activité (3 maximum)</span>
+                      </label>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                        {(formData.photos || []).length} / 3
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-3 font-medium">
+                      Ajoutez jusqu'à 3 photos maximum pour illustrer votre profil, vos travaux, équipements ou locaux.
+                    </p>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      {(formData.photos || []).map((photoUrl, idx) => (
+                        <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm group">
+                          <img src={photoUrl} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-700 transition-all active:scale-90"
+                            title="Supprimer la photo"
+                          >
+                            <X className="w-3.5 h-3.5 stroke-[3]" />
+                          </button>
+                          <div className="absolute bottom-1 left-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm">
+                            #{idx + 1}
+                          </div>
+                        </div>
+                      ))}
+
+                      {(formData.photos || []).length < 3 && (
+                        <label className={`aspect-square rounded-2xl border-2 border-dashed border-blue-400 hover:border-blue-600 bg-blue-50/50 hover:bg-blue-50 flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 text-blue-600 ${isCompressingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            multiple 
+                            onChange={handlePhotosSelected} 
+                            className="hidden" 
+                            disabled={isCompressingPhotos}
+                          />
+                          {isCompressingPhotos ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                              <span className="text-[9px] font-bold uppercase">Optimisation...</span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5 text-center p-2">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                                <Upload className="w-4 h-4" />
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-wider">Ajouter photo</span>
+                            </div>
+                          )}
+                        </label>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

@@ -109,6 +109,7 @@ interface DemandeRechercheScreenProps {
   user: User;
   onSelectTab: (tab: Tab) => void;
   initialQuery?: string;
+  onShowRegistration?: () => void;
 }
 
 const getCategoryColors = (profileType: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise' | string) => {
@@ -292,7 +293,7 @@ export const handleWhatsAppShare = (item: any) => {
   }
 };
 
-export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ onBack, user, onSelectTab, initialQuery }) => {
+export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ onBack, user, onSelectTab, initialQuery, onShowRegistration }) => {
   const [queryInput, setQueryInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [results, setResults] = useState<InscriptionResult[] | null>(null);
@@ -2115,41 +2116,37 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               </button>
             </div>
 
-            {/* The brand-new "Se mettre en ligne" / "Remettre en ligne" controls button */}
+            {/* Registration & Online status button */}
             <button
-              onClick={handleOpenOnlineForm}
+              onClick={() => {
+                if (onShowRegistration) {
+                  onShowRegistration();
+                } else {
+                  handleOpenOnlineForm();
+                }
+              }}
               className={`py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 ${
                 currentUserAd?.onlinePending === true
                   ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
-                  : currentUserAd?.isOnline === true && currentUserAd?.onlineEnd && Date.now() <= currentUserAd.onlineEnd
+                  : currentUserAd?.isOnline === true || currentUserAd?.status === 'Actif'
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-orange-500 hover:bg-orange-600 text-white'
               }`}
             >
               {currentUserAd?.onlinePending === true ? (
                 <>
                   <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0 animate-ping" />
-                  <span>🟡 En attente de validation</span>
+                  <span>🟡 Inscription en attente de validation (310 FCFA)</span>
                 </>
-              ) : currentUserAd?.isOnline === true && currentUserAd?.onlineEnd && Date.now() <= currentUserAd.onlineEnd ? (
+              ) : currentUserAd?.isOnline === true || currentUserAd?.status === 'Actif' ? (
                 <>
                   <span className="w-2 h-2 bg-emerald-400 rounded-full animate-ping shrink-0" />
-                  <span>🟢 En ligne - Modifier</span>
-                </>
-              ) : currentUserAd?.onlineEnd && Date.now() > currentUserAd.onlineEnd ? (
-                <>
-                  <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0 animate-pulse" />
-                  <span>🔴 Remettre en ligne</span>
-                </>
-              ) : currentUserAd?.onlineRefused === true ? (
-                <>
-                  <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0" />
-                  <span>🔴 Refusé / Recommencer</span>
+                  <span>🟢 En ligne - Modifier mon profil</span>
                 </>
               ) : (
                 <>
                   <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0" />
-                  <span>🔴 Hors ligne - Se mettre en ligne</span>
+                  <span>📝 S'inscrire sur FILANT°225 (310 FCFA)</span>
                 </>
               )}
             </button>

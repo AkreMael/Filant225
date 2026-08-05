@@ -1,4 +1,4 @@
-import { User, Worker, Offer, FavoriteRequest, PersonalRequest, Notification } from '../types';
+import type { User, Worker, Offer, FavoriteRequest, PersonalRequest, Notification } from '../types';
 import { db, auth, rtdb, storage } from '../firebase';
 import { doc, setDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, where, limit, increment } from 'firebase/firestore';
 import { ref as rtdbRef, push, set, serverTimestamp as rtdbTimestamp, get, update, onValue, remove, child } from 'firebase/database';
@@ -800,6 +800,134 @@ export const databaseService = {
     }
   },
   
+  notifyAdminNewRegistration: async (inscriptionData: any) => {
+    try {
+      const ADMIN_PHONE = "0705052632";
+      const userName = inscriptionData.name || 'Nouveau membre';
+      const userPhone = inscriptionData.phone || 'N/A';
+      const profileType = inscriptionData.profileType || 'Inscrit';
+      const city = inscriptionData.city || 'Non spécifiée';
+      const activity = inscriptionData.job || inscriptionData.equipmentType || inscriptionData.agencyName || inscriptionData.companyName || '';
+
+      const notifTitle = `📝 NOUVELLE INSCRIPTION (${profileType.toUpperCase()})`;
+      const notifBody = `Nouveau formulaire d'inscription soumis par ${userName} (${userPhone}, ${city}${activity ? ' - ' + activity : ''}). Montant de 310 FCFA en attente de validation.`;
+
+      const notificationPayload = {
+        title: notifTitle,
+        message: notifBody,
+        type: 'admin_inscription_alert',
+        amount: 310,
+        userName,
+        userPhone,
+        profileType,
+        city,
+        timestamp: Date.now()
+      };
+
+      // 1. Send notification to admin's Firestore notifications collection
+      await databaseService.sendNotificationToFirestore(ADMIN_PHONE, notificationPayload);
+      databaseService.addNotification(ADMIN_PHONE, notificationPayload);
+
+      // 2. Fire browser / system push notification if permissions granted
+      if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+        try {
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.showNotification(notifTitle, {
+                body: notifBody,
+                icon: '/icon.svg',
+                badge: '/icon.svg',
+                tag: 'admin-inscription-' + Date.now(),
+                data: { url: '/admin', userPhone }
+              });
+            }).catch(() => {
+              new window.Notification(notifTitle, { body: notifBody, icon: '/icon.svg' });
+            });
+          } else {
+            new window.Notification(notifTitle, { body: notifBody, icon: '/icon.svg' });
+          }
+        } catch (e) {
+          console.warn("Could not fire browser push notification:", e);
+        }
+      }
+
+      // 3. Dispatch custom events for open admin UI screens
+      window.dispatchEvent(new CustomEvent('new-notification', { detail: notificationPayload }));
+      window.dispatchEvent(new CustomEvent('admin-new-registration', { detail: notificationPayload }));
+
+      console.log("Admin automatic notification sent for new inscription of:", userPhone);
+    } catch (err) {
+      console.error("Error sending admin notification on registration:", err);
+    }
+  },
+
+  activateAndPublishProfile: async (userId: string) => {
+    try {
+      await databaseService.ensureAuth();
+      const sanitizedPhone = userId.replace(/\D/g, '');
+      if (!sanitizedPhone) return;
+
+      const docRef = doc(db, 'Inscriptions', sanitizedPhone);
+      const userInscr = await getDoc(docRef);
+      let profileType = 'Travailleur';
+      let currentData: any = {};
+      if (userInscr.exists()) {
+        currentData = userInscr.data() || {};
+        profileType = currentData.profileType || 'Travailleur';
+      }
+
+      const onlineStart = Date.now();
+      const onlineEnd = onlineStart + (365 * 24 * 3600 * 1000); // 1 year publication
+
+      const updatedFields = {
+        isOnline: true,
+        onlinePending: false,
+        onlineApproved: true,
+        onlineRefused: false,
+        isActivated: true,
+        isPublished: true,
+        status: 'Actif',
+        fraisDossierPayes: true,
+        registrationStatus: 'validated',
+        onlineStart,
+        onlineEnd,
+        updatedAt: serverTimestamp()
+      };
+
+      await setDoc(docRef, updatedFields, { merge: true });
+
+      let targetCollection = '';
+      if (profileType === 'Travailleur') targetCollection = 'Travailleurs';
+      else if (profileType === 'Propriétaire' || profileType === 'Equipement') targetCollection = 'Équipements';
+      else if (profileType === 'Agence' || profileType === 'Agence immobilière') targetCollection = 'Agences immobilières';
+      else if (profileType === 'Entreprise') targetCollection = 'Entreprises';
+
+      if (targetCollection) {
+        const profRef = doc(db, targetCollection, sanitizedPhone);
+        await setDoc(profRef, updatedFields, { merge: true });
+      }
+
+      await databaseService.updateQRCodeActivation(sanitizedPhone, {
+        name: currentData.name || '',
+        phone: sanitizedPhone,
+        city: currentData.city || '',
+        profileType,
+        profession: currentData.job || currentData.equipmentType || currentData.agencyName || currentData.companyName || '',
+        domain: currentData.skillsDescription || currentData.equipmentCategory || currentData.propertyTypes || currentData.companyDomain || '',
+        status: "Profil publié en ligne",
+        fraisDossierPayes: true,
+        isActivated: true,
+        isPublished: true,
+        updatedAt: new Date().toISOString()
+      });
+
+      databaseService.triggerEvolutionUpdate(sanitizedPhone);
+      console.log("Profile automatically activated and published online for phone:", sanitizedPhone);
+    } catch (err) {
+      console.error("Error in activateAndPublishProfile:", err);
+    }
+  },
+
   saveInscription: async (inscriptionData: any) => {
     try {
       await databaseService.ensureAuth();
@@ -820,34 +948,171 @@ export const databaseService = {
           console.error("Error sending user inscription message to chat:", msgErr);
         }
 
-        const docRef = doc(db, 'Inscriptions', sanitizedPhone);
-        await setDoc(docRef, {
+        // Check user's wallet balance
+        let balance = 0;
+        try {
+          const walletRef = doc(db, 'Wallets', sanitizedPhone);
+          const walletSnap = await getDoc(walletRef);
+          if (walletSnap.exists()) {
+            balance = walletSnap.data().balance || 0;
+          }
+        } catch (walletErr) {
+          console.warn("Could not fetch wallet balance on inscription:", walletErr);
+        }
+
+        const hasSufficientBalance = balance >= 310;
+        const onlineStart = Date.now();
+        const onlineEnd = onlineStart + (365 * 24 * 3600 * 1000); // 1 year publication
+
+        const fullPayload = {
           ...inscriptionData,
           timestamp: serverTimestamp(),
-          status: 'pending',
-          adminReadStatus: 'NON LU'
-        });
-        console.log("Inscription saved/updated successfully for profile:", sanitizedPhone);
+          status: hasSufficientBalance ? 'Actif' : 'pending',
+          isActivated: hasSufficientBalance,
+          isPublished: hasSufficientBalance,
+          registrationStatus: hasSufficientBalance ? 'validated' : 'pending',
+          isOnline: hasSufficientBalance,
+          onlinePending: !hasSufficientBalance,
+          onlineApproved: hasSufficientBalance,
+          onlineRefused: false,
+          fraisDossierPayes: hasSufficientBalance,
+          onlineStart: hasSufficientBalance ? onlineStart : null,
+          onlineEnd: hasSufficientBalance ? onlineEnd : null,
+          adminReadStatus: hasSufficientBalance ? 'LU' : 'NON LU'
+        };
+
+        const docRef = doc(db, 'Inscriptions', sanitizedPhone);
+        await setDoc(docRef, fullPayload, { merge: true });
+        console.log("Inscription saved/updated successfully for profile:", sanitizedPhone, "AutoPaid:", hasSufficientBalance);
+
+        // Also sync to target professional collection so profile is prepared
+        let targetColl = '';
+        const pType = inscriptionData.profileType;
+        if (pType === 'Travailleur') targetColl = 'Travailleurs';
+        else if (pType === 'Propriétaire' || pType === 'Equipement') targetColl = 'Équipements';
+        else if (pType === 'Agence' || pType === 'Agence immobilière') targetColl = 'Agences immobilières';
+        else if (pType === 'Entreprise') targetColl = 'Entreprises';
+
+        if (targetColl) {
+          try {
+            const profRef = doc(db, targetColl, sanitizedPhone);
+            await setDoc(profRef, fullPayload, { merge: true });
+          } catch (syncErr) {
+            console.warn("Could not pre-sync to target collection:", syncErr);
+          }
+        }
+
+        if (hasSufficientBalance) {
+          // Process 310 FCFA wallet deduction
+          try {
+            await databaseService.processWalletPayment(
+              sanitizedPhone,
+              inscriptionData.name || 'Utilisateur',
+              inscriptionData.city || 'Non spécifiée',
+              310,
+              "Inscription et mise en ligne",
+              "INSCR-" + Date.now()
+            );
+          } catch (payErr) {
+            console.error("Error executing auto wallet payment for inscription:", payErr);
+          }
+
+          // Save validated payment log to RTDB
+          await databaseService.savePaymentToRTDB({
+            userId: sanitizedPhone,
+            userName: inscriptionData.name || 'Utilisateur',
+            phone: inscriptionData.phone || sanitizedPhone,
+            city: inscriptionData.city || 'Non spécifiée',
+            amount: '310',
+            title: "Frais d'inscription et de mise en ligne (310 FCFA)",
+            serviceType: "Inscription et mise en ligne",
+            paymentType: "Inscription",
+            waveNumber: 'FILANT°225 PORTEFEUILLE (AUTO)',
+            timestamp: Date.now(),
+            status: 'Paiement validé'
+          });
+
+          // Update QRCodeActivation to Published
+          await databaseService.updateQRCodeActivation(sanitizedPhone, {
+            name: inscriptionData.name,
+            phone: sanitizedPhone,
+            city: inscriptionData.city,
+            profileType: inscriptionData.profileType,
+            profession: inscriptionData.job || inscriptionData.equipmentType || inscriptionData.agencyName || inscriptionData.companyName || '',
+            domain: inscriptionData.skillsDescription || inscriptionData.equipmentCategory || inscriptionData.propertyTypes || inscriptionData.companyDomain || '',
+            status: "Profil publié en ligne",
+            fraisDossierPayes: true,
+            isActivated: true,
+            isPublished: true,
+            updatedAt: new Date().toISOString()
+          });
+
+          // Send automated chat message for auto-validated inscription
+          setTimeout(async () => {
+            try {
+              const autoMsg = {
+                text: "✅ Félicitations ! Vos frais d'inscription (310 FCFA) ont été réglés automatiquement depuis votre portefeuille. Votre profil et vos informations sont désormais entièrement validés et PUBLIÉS EN LIGNE dans Services en ligne !",
+                sender: 'admin',
+                isRead: false,
+                adminReadStatus: 'LU'
+              };
+              await databaseService.saveTypedChatMessage('Privee', sanitizedPhone, autoMsg);
+            } catch (msgErr) {
+              console.error("Error sending auto message after auto-paid inscription:", msgErr);
+            }
+          }, 1250);
+        } else {
+          // Record pending payment in RTDB for admin review
+          await databaseService.savePaymentToRTDB({
+            userId: sanitizedPhone,
+            userName: inscriptionData.name || 'Utilisateur',
+            phone: inscriptionData.phone || sanitizedPhone,
+            city: inscriptionData.city || 'Non spécifiée',
+            amount: '310',
+            title: "Frais d'inscription et de mise en ligne (310 FCFA)",
+            serviceType: "Inscription et mise en ligne",
+            paymentType: "Inscription",
+            waveNumber: 'En attente',
+            timestamp: Date.now(),
+            status: 'En attente'
+          });
+
+          // Update QRCodeActivation to Pending
+          await databaseService.updateQRCodeActivation(sanitizedPhone, {
+            name: inscriptionData.name,
+            phone: sanitizedPhone,
+            city: inscriptionData.city,
+            profileType: inscriptionData.profileType,
+            profession: inscriptionData.job || inscriptionData.equipmentType || inscriptionData.agencyName || inscriptionData.companyName || '',
+            domain: inscriptionData.skillsDescription || inscriptionData.equipmentCategory || inscriptionData.propertyTypes || inscriptionData.companyDomain || '',
+            status: "En attente paiement frais (310 FCFA)",
+            fraisDossierPayes: false,
+            updatedAt: new Date().toISOString()
+          });
+
+          // Trigger automatic push notification to admin with 310 FCFA pending
+          await databaseService.notifyAdminNewRegistration(inscriptionData);
+
+          // Send automated message for pending inscription
+          setTimeout(async () => {
+            try {
+              const autoMsg = {
+                text: "Merci pour votre inscription. Votre dossier a bien été reçu. Vos frais d'inscription (310 FCFA) sont en attente de paiement. Dès que votre solde de portefeuille sera rechargé ou votre paiement validé par l'administrateur, votre profil sera automatiquement publié en ligne.",
+                sender: 'admin',
+                isRead: false,
+                adminReadStatus: 'LU'
+              };
+              await databaseService.saveTypedChatMessage('Privee', sanitizedPhone, autoMsg);
+            } catch (msgErr) {
+              console.error("Error sending auto message after pending inscription:", msgErr);
+            }
+          }, 1250);
+        }
 
         // Trigger evolution update
         databaseService.triggerEvolutionUpdate(sanitizedPhone);
 
-        // Send automated message on registration completion with 1.2s delay to preserve proper chat sequence
-        setTimeout(async () => {
-          try {
-            const autoMsg = {
-              text: "Merci pour votre inscription. Votre dossier a bien été reçu. Nous allons examiner vos informations et vous contacter dans les meilleurs délais. Veuillez suivre les différentes étapes de l'application pour finaliser votre mise en relation.",
-              sender: 'admin',
-              isRead: false,
-              adminReadStatus: 'LU'
-            };
-            await databaseService.saveTypedChatMessage('Privee', sanitizedPhone, autoMsg);
-          } catch (msgErr) {
-            console.error("Error sending auto message after inscription:", msgErr);
-          }
-        }, 1250);
-
-        return true;
+        return { success: true, autoPaid: hasSufficientBalance };
       } else {
         const inscrRef = collection(db, 'Inscriptions');
         await addDoc(inscrRef, {
@@ -856,42 +1121,11 @@ export const databaseService = {
           status: 'pending',
           adminReadStatus: 'NON LU'
         });
-        console.log("Inscription saved successfully (fallback with addDoc)");
-
-        // Send automated message for fallback if phone is present
-        if (phoneRaw) {
-          try {
-            const activity = inscriptionData.job || inscriptionData.equipmentType || inscriptionData.agencyName || inscriptionData.companyName || 'Inscrit';
-            const userMsg = {
-            text: `📝 *Nouveau Formulaire d'Inscription Soumis*\n\nJe viens de terminer mon inscription sur FILANT°225.\n\n• *Nom :* ${inscriptionData.name || 'Utilisateur'}\n• *Ville :* ${inscriptionData.city || 'Non spécifiée'}\n• *Type de Profil :* ${inscriptionData.profileType || 'Inscrit'}\n• *Activité/Catégorie :* ${activity}`,
-            sender: 'user',
-            type: 'inscription_submission'
-          };
-          await databaseService.saveTypedChatMessage('Privee', sanitizedPhone, userMsg);
-
-          setTimeout(async () => {
-            try {
-              const autoMsg = {
-                text: "Merci pour votre inscription. Votre dossier a bien été reçu. Nous allons examiner vos informations et vous contacter dans les meilleurs délais. Veuillez suivre les différentes étapes de l'application pour finaliser votre mise en relation.",
-                sender: 'admin',
-                isRead: false,
-                adminReadStatus: 'LU'
-              };
-              await databaseService.saveTypedChatMessage('Privee', sanitizedPhone, autoMsg);
-            } catch (msgErr) {
-                console.error("Error sending auto message after inscription fallback:", msgErr);
-              }
-            }, 1250);
-          } catch (msgErr) {
-            console.error("Error sending user registration message fallback to chat:", msgErr);
-          }
-        }
-
-        return true;
+        return { success: true, autoPaid: false };
       }
-    } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, 'Inscriptions');
-        return false;
+    } catch (err) {
+      console.error("Error in saveInscription:", err);
+      return false;
     }
   },
 
@@ -1851,6 +2085,28 @@ export const databaseService = {
               }
             }
 
+            // Fallback: If no pending payment in RTDB, check if the user has a pending Inscription in Firestore
+            if (!pendingPaymentToProcess) {
+              try {
+                const inscrSnap = await getDoc(doc(db, 'Inscriptions', userPhone));
+                if (inscrSnap.exists()) {
+                  const data = inscrSnap.data() || {};
+                  if (data.onlinePending === true || data.status === 'pending' || data.fraisDossierPayes !== true) {
+                    pendingPaymentToProcess = {
+                      paymentType: 'Inscription',
+                      amount: '310',
+                      title: "Frais d'inscription et de mise en ligne (310 FCFA)",
+                      formData: null,
+                      serviceRequestId: null,
+                      rtdbPath: null
+                    };
+                  }
+                }
+              } catch (inscrCheckErr) {
+                console.warn("Could not check pending inscription on deposit:", inscrCheckErr);
+              }
+            }
+
             if (pendingPaymentToProcess) {
               const targetAmountNum = parseFloat(pendingPaymentToProcess.amount || '0') || 0;
               
@@ -1910,11 +2166,7 @@ export const databaseService = {
                 // Process specific activation / status logic based on target type
                 const pType = pendingPaymentToProcess.paymentType;
                 if (pType === 'Inscription' || targetAmountNum === 310) {
-                  await databaseService.updateQRCodeActivation(userPhone, {
-                    status: "En attente paiement activation (7 100 FCFA)",
-                    fraisDossierPayes: true,
-                    updatedAt: serverTimestamp()
-                  });
+                  await databaseService.activateAndPublishProfile(userPhone);
                 } else if (pType === 'Activation' || targetAmountNum === 7100) {
                   const now = new Date();
                   const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
@@ -2079,15 +2331,9 @@ export const databaseService = {
             }
           }
 
-          if (payment.paymentType === 'Inscription' || payment.amount === '310') {
-            // Étape 2 -> 3
-            await databaseService.updateQRCodeActivation(userId, {
-              status: "En attente paiement activation (7 100 FCFA)",
-              fraisDossierPayes: true,
-              updatedAt: serverTimestamp()
-            });
+          if (payment.paymentType === 'Inscription' || payment.amount === '310' || payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne')) {
+            await databaseService.activateAndPublishProfile(userId);
           } else if (payment.paymentType === 'Activation' || payment.amount === '7100') {
-            // Étape 3 -> 4 (Actif)
             const now = new Date();
             const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
             
@@ -2098,60 +2344,14 @@ export const databaseService = {
               activationDate: now.toISOString(),
               updatedAt: serverTimestamp()
             });
-          } else if (payment.paymentType === 'Renouvellement' || payment.amount === '500') {
-             const now = new Date();
-             const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
-             await databaseService.updateQRCodeActivation(userId, {
-                status: "Code QR Actif",
-                expiryDate: expiryDate.toISOString(),
-                activationDate: now.toISOString(),
-                updatedAt: serverTimestamp()
-             });
-          } else if (payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne')) {
-            const isOneMonth = payment.title?.toLowerCase().includes('mois') || payment.title?.toLowerCase().includes('350') || payment.amount === '350';
-            const durationMs = isOneMonth ? 30 * 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
-            const onlineStart = Date.now();
-            const onlineEnd = onlineStart + durationMs;
-
-            const docRef = doc(db, 'Inscriptions', userId);
-            const userInscr = await getDoc(docRef);
-            let profileType = 'Travailleur';
-            if (userInscr.exists()) {
-              profileType = userInscr.data()?.profileType || 'Travailleur';
-            }
-
-            const updatedFields = {
-              isOnline: true,
-              onlinePending: false,
-              onlineApproved: true,
-              onlineRefused: false,
-              onlineStart,
-              onlineEnd,
-              updatedAt: serverTimestamp()
-            };
-
-            await setDoc(docRef, updatedFields, { merge: true });
-
-            let targetCollection = '';
-            if (profileType === 'Travailleur') targetCollection = 'Travailleurs';
-            else if (profileType === 'Propriétaire' || profileType === 'Equipement') targetCollection = 'Équipements';
-            else if (profileType === 'Agence' || profileType === 'Agence immobilière') targetCollection = 'Agences immobilières';
-            else if (profileType === 'Entreprise') targetCollection = 'Entreprises';
-
-            if (targetCollection) {
-              const profRef = doc(db, targetCollection, userId);
-              await setDoc(profRef, updatedFields, { merge: true });
-            }
-
-            databaseService.triggerEvolutionUpdate(userId);
           }
         }
 
         // Send automatic message to user
         if (userId) {
-          const isMiseEnLigne = payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne');
-          const successMsg = isMiseEnLigne 
-            ? `✅ Félicitations ! Votre demande de mise en ligne d'annonce a été validée avec succès par l'administrateur. Votre annonce est désormais visible pour tous les utilisateurs.`
+          const isInscriptionOrOnline = payment.paymentType === 'Inscription' || payment.amount === '310' || payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne');
+          const successMsg = isInscriptionOrOnline
+            ? `✅ Félicitations ! Votre inscription et paiement de 310 FCFA ont été validés avec succès par l'administrateur. Votre profil professionnel avec vos photos est désormais automatiquement publié et en ligne dans "Services en ligne" !`
             : `✅ Votre paiement de ${payment.amount} FCFA (${payment.title || payment.paymentType}) a été validé avec succès par l'administrateur. L'étape suivante est maintenant débloquée.`;
 
           const msg = {
