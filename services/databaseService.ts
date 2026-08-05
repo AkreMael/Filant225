@@ -904,7 +904,10 @@ export const databaseService = {
 
       if (targetCollection) {
         const profRef = doc(db, targetCollection, sanitizedPhone);
-        await setDoc(profRef, updatedFields, { merge: true });
+        await setDoc(profRef, {
+          ...currentData,
+          ...updatedFields
+        }, { merge: true });
       }
 
       await databaseService.updateQRCodeActivation(sanitizedPhone, {
@@ -918,6 +921,8 @@ export const databaseService = {
         fraisDossierPayes: true,
         isActivated: true,
         isPublished: true,
+        profileImageUrl: currentData.profileImageUrl || currentData.imageLink || (currentData.photos && currentData.photos[0]) || '',
+        imageLink: currentData.imageLink || currentData.profileImageUrl || (currentData.photos && currentData.photos[0]) || '',
         updatedAt: new Date().toISOString()
       });
 
@@ -925,6 +930,56 @@ export const databaseService = {
       console.log("Profile automatically activated and published online for phone:", sanitizedPhone);
     } catch (err) {
       console.error("Error in activateAndPublishProfile:", err);
+    }
+  },
+
+  updateProfilePhotos: async (userId: string, profileType: string, photos: string[]) => {
+    try {
+      await databaseService.ensureAuth();
+      const sanitizedPhone = userId.replace(/\D/g, '');
+      if (!sanitizedPhone) return false;
+
+      const cleanPhotos = (photos || []).filter((p: any) => typeof p === 'string' && p.trim().length > 0);
+      const firstPhoto = cleanPhotos.length > 0 ? cleanPhotos[0] : '';
+
+      const updatePayload = {
+        photos: cleanPhotos,
+        onlineImages: cleanPhotos,
+        images: cleanPhotos,
+        profileImageUrl: firstPhoto,
+        imageLink: firstPhoto,
+        updatedAt: serverTimestamp()
+      };
+
+      // 1. Update Inscriptions document
+      const inscrRef = doc(db, 'Inscriptions', sanitizedPhone);
+      await setDoc(inscrRef, updatePayload, { merge: true });
+
+      // 2. Update target professional collection
+      let targetCollection = '';
+      const pType = profileType || '';
+      if (pType === 'Travailleur') targetCollection = 'Travailleurs';
+      else if (pType === 'Propriétaire' || pType === 'Equipement') targetCollection = 'Équipements';
+      else if (pType === 'Agence' || pType === 'Agence immobilière') targetCollection = 'Agences immobilières';
+      else if (pType === 'Entreprise') targetCollection = 'Entreprises';
+
+      if (targetCollection) {
+        const targetRef = doc(db, targetCollection, sanitizedPhone);
+        await setDoc(targetRef, updatePayload, { merge: true });
+      }
+
+      // 3. Update QRCodeActivation
+      await databaseService.updateQRCodeActivation(sanitizedPhone, {
+        profileImageUrl: firstPhoto,
+        imageLink: firstPhoto,
+        updatedAt: new Date().toISOString()
+      });
+
+      databaseService.triggerEvolutionUpdate(sanitizedPhone);
+      return true;
+    } catch (err) {
+      console.error("Error updating profile photos:", err);
+      return false;
     }
   },
 

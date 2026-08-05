@@ -82,6 +82,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItemForDetails, setSelectedItemForDetails] = useState<any>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [showMissionModal, setShowMissionModal] = useState(false);
   const [missionForm, setMissionForm] = useState({ title: '', message: '', status: 'MISSION ENVOYÉE' });
@@ -2897,7 +2898,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                        {selectedItemForDetails.idCardFront && (
                          <div className="space-y-2">
                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Face Avant</p>
-                           <div className="aspect-video bg-gray-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 cursor-zoom-in" onClick={() => window.open(selectedItemForDetails.idCardFront)}>
+                           <div className="aspect-video bg-gray-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 cursor-zoom-in" onClick={() => setPreviewImage(selectedItemForDetails.idCardFront)}>
                              <img src={selectedItemForDetails.idCardFront} alt="ID Front" className="w-full h-full object-cover" />
                            </div>
                          </div>
@@ -2905,7 +2906,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                        {selectedItemForDetails.idCardBack && (
                          <div className="space-y-2">
                            <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest pl-1">Face Arrière</p>
-                           <div className="aspect-video bg-gray-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 cursor-zoom-in" onClick={() => window.open(selectedItemForDetails.idCardBack)}>
+                           <div className="aspect-video bg-gray-100 dark:bg-slate-800 rounded-2xl overflow-hidden border border-gray-200 dark:border-slate-700 cursor-zoom-in" onClick={() => setPreviewImage(selectedItemForDetails.idCardBack)}>
                              <img src={selectedItemForDetails.idCardBack} alt="ID Back" className="w-full h-full object-cover" />
                            </div>
                          </div>
@@ -2982,30 +2983,116 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                     </div>
                  </div>
 
-                 {/* Photos gallery view (up to 3 photos) */}
-                 {((selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0) || selectedItemForDetails.profileImageUrl || selectedItemForDetails.imageLink) && (
-                   <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
-                     <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
-                       <span>📷 PHOTOS DU PROFIL / ACTIVITÉ</span>
-                       <span className="text-blue-600 font-bold">
-                         {(selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0 ? selectedItemForDetails.photos.length : 1)} photo(s)
-                       </span>
-                     </p>
-                     <div className="grid grid-cols-3 gap-3">
-                       {(selectedItemForDetails.photos && selectedItemForDetails.photos.length > 0 
-                         ? selectedItemForDetails.photos 
-                         : [selectedItemForDetails.profileImageUrl || selectedItemForDetails.imageLink]
-                       ).filter(Boolean).map((imgUrl: string, idx: number) => (
-                         <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm">
-                           <img src={imgUrl} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                           <div className="absolute bottom-1 left-1.5 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-sm">
-                             #{idx + 1}
-                           </div>
+                 {/* Photos gallery view (up to 3 photos) with Click-to-Zoom & Individual Deletion */}
+                 {(() => {
+                   const itemPhotos: string[] = Array.from(new Set([
+                     ...(Array.isArray(selectedItemForDetails.photos) ? selectedItemForDetails.photos : []),
+                     ...(Array.isArray(selectedItemForDetails.onlineImages) ? selectedItemForDetails.onlineImages : []),
+                     ...(Array.isArray(selectedItemForDetails.images) ? selectedItemForDetails.images : []),
+                     selectedItemForDetails.profileImageUrl,
+                     selectedItemForDetails.imageLink
+                   ].filter((img: any) => typeof img === "string" && img.trim().length > 0)));
+
+                   return (
+                     <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3">
+                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center justify-between">
+                         <span>📷 PHOTOS DU PROFIL / ACTIVITÉ</span>
+                         <span className="text-blue-600 font-bold">
+                           {itemPhotos.length} photo(s) disponible(s)
+                         </span>
+                       </p>
+
+                       {itemPhotos.length === 0 ? (
+                         <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-gray-200 dark:border-slate-800 text-center">
+                           <p className="text-xs text-slate-400 font-bold uppercase">Aucune photo enregistrée (Image masquée par défaut)</p>
                          </div>
-                       ))}
+                       ) : (
+                         <div className="grid grid-cols-3 gap-3">
+                           {itemPhotos.map((imgUrl: string, idx: number) => (
+                             <div key={idx} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm bg-black/5">
+                               <img 
+                                 src={imgUrl} 
+                                 alt={`Photo ${idx + 1}`} 
+                                 className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform duration-300" 
+                                 onClick={() => setPreviewImage(imgUrl)}
+                               />
+                               <div className="absolute bottom-1.5 left-1.5 bg-black/70 text-white text-[9px] font-bold px-2 py-0.5 rounded-md backdrop-blur-sm pointer-events-none">
+                                 #{idx + 1}
+                               </div>
+
+                               <button
+                                 type="button"
+                                 onClick={() => setPreviewImage(imgUrl)}
+                                 className="absolute top-1.5 left-1.5 bg-black/60 hover:bg-black/90 text-white p-1.5 rounded-xl backdrop-blur-sm transition-all"
+                                 title="Voir en taille réelle"
+                               >
+                                 <Eye className="w-3.5 h-3.5" />
+                               </button>
+
+                               <button
+                                 type="button"
+                                 onClick={async (e) => {
+                                   e.stopPropagation();
+                                   if (!window.confirm(`Voulez-vous vraiment supprimer la photo #${idx + 1} ?`)) return;
+
+                                   const remainingPhotos = itemPhotos.filter((_, i) => i !== idx);
+                                   const targetPhone = (selectedItemForDetails.phone || selectedItemForDetails.userPhone || selectedItemForDetails.userId || selectedItemForDetails.id || "").replace(/\D/g, "");
+                                   const pType = selectedItemForDetails.profileType || selectedItemForDetails.typeInscription || "Travailleur";
+
+                                   const success = await databaseService.updateProfilePhotos(targetPhone || selectedItemForDetails.id, pType, remainingPhotos);
+
+                                   if (success) {
+                                     setSelectedItemForDetails((prev: any) => prev ? {
+                                       ...prev,
+                                       photos: remainingPhotos,
+                                       onlineImages: remainingPhotos,
+                                       images: remainingPhotos,
+                                       profileImageUrl: remainingPhotos[0] || "",
+                                       imageLink: remainingPhotos[0] || ""
+                                     } : null);
+
+                                     setData((prev: any) => {
+                                       const updateItemInList = (list: any[]) => (list || []).map((ins: any) => {
+                                         if (ins.id === selectedItemForDetails.id || (ins.phone && ins.phone.replace(/\D/g, "") === targetPhone)) {
+                                           return {
+                                             ...ins,
+                                             photos: remainingPhotos,
+                                             onlineImages: remainingPhotos,
+                                             images: remainingPhotos,
+                                             profileImageUrl: remainingPhotos[0] || "",
+                                             imageLink: remainingPhotos[0] || ""
+                                           };
+                                         }
+                                         return ins;
+                                       });
+
+                                       return {
+                                         ...prev,
+                                         inscriptions: updateItemInList(prev.inscriptions),
+                                         travailleurs: updateItemInList(prev.travailleurs),
+                                         equipements: updateItemInList(prev.equipements),
+                                         agences: updateItemInList(prev.agences),
+                                         entreprises: updateItemInList(prev.entreprises)
+                                       };
+                                     });
+
+                                     alert("Photo supprimée avec succès !");
+                                   } else {
+                                     alert("Erreur lors de la suppression de la photo.");
+                                   }
+                                 }}
+                                 className="absolute top-1.5 right-1.5 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-xl shadow-md transition-all active:scale-95"
+                                 title="Supprimer cette photo"
+                               >
+                                 <Trash2 className="w-3.5 h-3.5" />
+                               </button>
+                             </div>
+                           ))}
+                         </div>
+                       )}
                      </div>
-                   </div>
-                 )}
+                   );
+                 })()}
 
                  {/* Admin Image Link Edit Section */}
                  {(selectedItemForDetails.profileType || selectedItemForDetails.typeInscription) && (
@@ -3023,27 +3110,58 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                        />
                        <button
                          onClick={async () => {
-                           if (!selectedItemForDetails.id) return;
+                           if (!selectedItemForDetails.id && !selectedItemForDetails.phone) return;
                            setIsSavingImageLink(true);
                            try {
-                             const docRef = doc(db, 'Inscriptions', selectedItemForDetails.id);
-                             await updateDoc(docRef, { imageLink: localImageLink });
-                             
-                             // Update selected item in details so UI updates instantly
-                             setSelectedItemForDetails((prev: any) => prev ? { ...prev, imageLink: localImageLink } : null);
-                             
-                             // Update local data list too so user doesn't need to reclick
+                             const targetPhone = (selectedItemForDetails.phone || selectedItemForDetails.userPhone || selectedItemForDetails.userId || selectedItemForDetails.id || "").replace(/\D/g, "");
+                             const pType = selectedItemForDetails.profileType || selectedItemForDetails.typeInscription || "Travailleur";
+
+                             const currentPhotos = Array.from(new Set([
+                               ...(Array.isArray(selectedItemForDetails.photos) ? selectedItemForDetails.photos : []),
+                               ...(Array.isArray(selectedItemForDetails.onlineImages) ? selectedItemForDetails.onlineImages : []),
+                               ...(Array.isArray(selectedItemForDetails.images) ? selectedItemForDetails.images : [])
+                             ].filter((p: any) => typeof p === "string" && p.trim().length > 0)));
+
+                             const newLink = localImageLink.trim();
+                             const newPhotos = newLink ? (currentPhotos.includes(newLink) ? currentPhotos : [newLink, ...currentPhotos]) : currentPhotos;
+
+                             await databaseService.updateProfilePhotos(targetPhone || selectedItemForDetails.id, pType, newPhotos);
+
+                             setSelectedItemForDetails((prev: any) => prev ? {
+                               ...prev,
+                               photos: newPhotos,
+                               onlineImages: newPhotos,
+                               images: newPhotos,
+                               profileImageUrl: newPhotos[0] || "",
+                               imageLink: newLink
+                             } : null);
+
                              setData((prev: any) => {
-                               const updatedInscriptions = (prev.inscriptions || []).map((ins: any) => {
-                                 if (ins.id === selectedItemForDetails.id) {
-                                   return { ...ins, imageLink: localImageLink };
+                               const updateItemInList = (list: any[]) => (list || []).map((ins: any) => {
+                                 if (ins.id === selectedItemForDetails.id || (ins.phone && ins.phone.replace(/\D/g, "") === targetPhone)) {
+                                   return {
+                                     ...ins,
+                                     photos: newPhotos,
+                                     onlineImages: newPhotos,
+                                     images: newPhotos,
+                                     profileImageUrl: newPhotos[0] || "",
+                                     imageLink: newLink
+                                   };
                                  }
                                  return ins;
                                });
-                               return { ...prev, inscriptions: updatedInscriptions };
+
+                               return {
+                                 ...prev,
+                                 inscriptions: updateItemInList(prev.inscriptions),
+                                 travailleurs: updateItemInList(prev.travailleurs),
+                                 equipements: updateItemInList(prev.equipements),
+                                 agences: updateItemInList(prev.agences),
+                                 entreprises: updateItemInList(prev.entreprises)
+                               };
                              });
 
-                             alert("Lien de l'image mis à jour avec succès !");
+                             alert("Lien de l'image mis à jour et synchronisé avec succès !");
                            } catch (err) {
                              console.error("Error setting image link:", err);
                              alert("Erreur lors de la mise à jour du lien d'image.");
@@ -3054,11 +3172,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                          disabled={isSavingImageLink}
                          className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-500 text-white font-black text-[10px] uppercase tracking-wider px-5 py-3 rounded-xl transition-all active:scale-95 shrink-0"
                        >
-                         {isSavingImageLink ? 'Enregistrement...' : 'Enregistrer'}
+                         {isSavingImageLink ? "Enregistrement..." : "Enregistrer"}
                        </button>
                      </div>
                      <p className="text-[9px] text-gray-400 font-bold uppercase leading-relaxed">
-                       Ce champ permet à l'administrateur d'assigner ou modifier l'image du profil. Si le lien est renseigné, l'image s'affichera sur la carte ; sinon, la mention « Masqué » s'affichera.
+                       Ce champ permet à l'administrateur d'assigner ou modifier l'image du profil. Les modifications sont enregistrées et publiées instantanément.
                      </p>
                    </div>
                  )}
@@ -3432,7 +3550,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
            </div>
          )}
        </AnimatePresence>
-     </div>
+     
+        {/* Full-screen Image Preview Lightbox Modal */}
+        <AnimatePresence>
+          {previewImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPreviewImage(null)}
+              className="fixed inset-0 z-[3000] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            >
+              <div className="relative max-w-5xl max-h-[90vh] w-full flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="absolute -top-12 right-0 sm:top-2 sm:right-2 bg-white/20 hover:bg-white/40 text-white p-2.5 rounded-full backdrop-blur-sm transition-all z-10"
+                  title="Fermer"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+                <img
+                  src={previewImage}
+                  alt="Aperçu grand format"
+                  className="max-h-[85vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/10"
+                />
+                <p className="text-white/70 text-xs font-bold mt-3 uppercase tracking-wider text-center">
+                  Image en taille réelle — Cliquez pour fermer
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+      </div>
    );
  };
 

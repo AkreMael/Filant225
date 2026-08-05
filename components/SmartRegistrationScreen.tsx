@@ -346,7 +346,8 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     }, 20000);
 
     try {
-        const firstPhoto = formData.photos && formData.photos.length > 0 ? formData.photos[0] : '';
+        const rawPhotos = formData.photos || [];
+        const firstPhoto = rawPhotos.length > 0 ? rawPhotos[0] : '';
         let currentProfileImageUrl = firstPhoto || formData.profileImageUrl || '';
 
         const inscriptionData: any = {
@@ -355,7 +356,10 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
           city: formData.city,
           phone: formData.phone,
           profileImageUrl: currentProfileImageUrl,
-          photos: formData.photos || [],
+          imageLink: currentProfileImageUrl,
+          photos: rawPhotos,
+          onlineImages: rawPhotos,
+          images: rawPhotos,
           registrationStatus: 'pending',
           submissionType: 'SmartRegistration',
           submittedAt: new Date().toISOString(),

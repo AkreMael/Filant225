@@ -678,6 +678,15 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               titleOrActivity = item.companyName || 'Entreprise';
             }
 
+            const allPhotos: string[] = Array.from(new Set([
+              ...(Array.isArray(item.photos) ? item.photos : []),
+              ...(Array.isArray(item.onlineImages) ? item.onlineImages : []),
+              ...(Array.isArray(item.images) ? item.images : []),
+              item.profileImageUrl,
+              item.imageLink
+            ].filter((img: any) => typeof img === 'string' && img.trim().length > 0)));
+            const primaryPhoto = allPhotos.length > 0 ? allPhotos[0] : '';
+
             const formattedAd = {
               ...item,
               id: snap.id,
@@ -687,8 +696,11 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               profileType: (item.profileType === 'Agence immobilière' ? 'Agence' : item.profileType) || 'Travailleur',
               titleOrActivity,
               description: item.skillsDescription || item.equipmentDescription || item.companyServices || item.description || '',
-              imageLink: item.imageLink || '',
-              images: item.onlineImages || item.images || [],
+              imageLink: primaryPhoto,
+              profileImageUrl: primaryPhoto,
+              photos: allPhotos,
+              onlineImages: allPhotos,
+              images: allPhotos,
               desiredSalary: item.desiredSalary || '',
               salaryPeriod: item.salaryPeriod || '',
               propertyTypes: item.propertyTypes || '',
@@ -816,6 +828,16 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
           titleOrActivity = item.companyName || 'Entreprise';
         }
 
+        const allPhotos: string[] = Array.from(new Set([
+          ...(Array.isArray(item.photos) ? item.photos : []),
+          ...(Array.isArray(item.onlineImages) ? item.onlineImages : []),
+          ...(Array.isArray(item.images) ? item.images : []),
+          item.profileImageUrl,
+          item.imageLink
+        ].filter((img: any) => typeof img === 'string' && img.trim().length > 0)));
+
+        const primaryPhoto = allPhotos.length > 0 ? allPhotos[0] : '';
+
         return {
           ...item,
           id: item.id || Math.random().toString(),
@@ -825,9 +847,11 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
           profileType: (item.profileType === 'Agence immobilière' ? 'Agence' : item.profileType) || 'Travailleur',
           titleOrActivity,
           description: item.skillsDescription || item.equipmentDescription || item.companyServices || item.description || '',
-          imageLink: item.imageLink || '',
-          // Include new custom fields for cards
-          images: item.onlineImages || item.images || [],
+          imageLink: primaryPhoto,
+          profileImageUrl: primaryPhoto,
+          photos: allPhotos,
+          onlineImages: allPhotos,
+          images: allPhotos,
           desiredSalary: item.desiredSalary || '',
           salaryPeriod: item.salaryPeriod || '',
           propertyTypes: item.propertyTypes || '',
@@ -2209,17 +2233,15 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 pb-20">
                 {results.map((item) => {
-                  const hasImage = !!(
-                    (item.onlineImages && item.onlineImages.length > 0 && item.onlineImages[0]) ||
-                    (item.images && item.images.length > 0 && item.images[0]) ||
-                    (item.imageLink && item.imageLink.trim())
-                  );
+                  const cardImages: string[] = Array.from(new Set([
+                    ...(Array.isArray(item.photos) ? item.photos : []),
+                    ...(Array.isArray(item.onlineImages) ? item.onlineImages : []),
+                    ...(Array.isArray(item.images) ? item.images : []),
+                    item.profileImageUrl,
+                    item.imageLink
+                  ].filter((img: any) => typeof img === 'string' && img.trim().length > 0)));
 
-                  const cardImages = item.onlineImages && item.onlineImages.length > 0
-                    ? item.onlineImages
-                    : (item.images && item.images.length > 0
-                        ? item.images
-                        : (item.imageLink ? [item.imageLink] : []));
+                  const hasImage = cardImages.length > 0;
 
                   const { mainTitle, userName } = getProfileDisplayInfo(item);
 
@@ -2974,15 +2996,15 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
             {/* Scrollable Area (Images + Detailed Info) */}
             <div className="flex-1 overflow-y-auto scroll-smooth">
               {(() => {
-                const hasAdImage = !!(
-                  (selectedAdDetail.onlineImages && selectedAdDetail.onlineImages.length > 0 && selectedAdDetail.onlineImages[0]) ||
-                  (selectedAdDetail.images && selectedAdDetail.images.length > 0 && selectedAdDetail.images[0]) ||
-                  (selectedAdDetail.imageLink && selectedAdDetail.imageLink.trim())
-                );
+                const detailImages: string[] = Array.from(new Set([
+                  ...(Array.isArray(selectedAdDetail.photos) ? selectedAdDetail.photos : []),
+                  ...(Array.isArray(selectedAdDetail.onlineImages) ? selectedAdDetail.onlineImages : []),
+                  ...(Array.isArray(selectedAdDetail.images) ? selectedAdDetail.images : []),
+                  selectedAdDetail.profileImageUrl,
+                  selectedAdDetail.imageLink
+                ].filter((img: any) => typeof img === 'string' && img.trim().length > 0)));
 
-                const detailImages = selectedAdDetail.onlineImages && selectedAdDetail.onlineImages.length > 0
-                  ? selectedAdDetail.onlineImages
-                  : (selectedAdDetail.images && selectedAdDetail.images.length > 0 ? selectedAdDetail.images : (selectedAdDetail.imageLink ? [selectedAdDetail.imageLink] : []));
+                const hasAdImage = detailImages.length > 0;
                   
                 return (
                   <>
