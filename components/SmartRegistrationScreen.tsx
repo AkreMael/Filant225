@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
 import { 
   ChevronRight, 
+  ChevronDown,
   Check, 
   User, 
   HardHat, 
@@ -454,38 +455,39 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">A appris : *</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {['Sur le tas', 'Formation professionnelle', 'Diplôme'].map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => {
-                        setFormData({...formData, learnedFrom: opt as any});
-                        if (errors.includes('learnedFrom')) setErrors(errors.filter(e => e !== 'learnedFrom'));
-                    }}
-                    className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-bold uppercase transition-all ${formData.learnedFrom === opt ? 'bg-orange-500 border-orange-500 text-white shadow-md' : errors.includes('learnedFrom') ? 'bg-red-50 border-red-200 text-red-500 font-bold' : 'bg-white border-blue-500/60 text-black'}`}
-                  >
-                    {opt}
-                  </button>
-                ))}
+              <div className="relative">
+                <select
+                  value={formData.learnedFrom || ''}
+                  onChange={(e) => {
+                      setFormData({...formData, learnedFrom: e.target.value as any});
+                      if (errors.includes('learnedFrom')) setErrors(errors.filter(e => e !== 'learnedFrom'));
+                  }}
+                  className={`${getInputClass('learnedFrom')} appearance-none pr-10 cursor-pointer`}
+                >
+                  <option value="">-- Sélectionner une option --</option>
+                  <option value="Sur le tas">Sur le tas</option>
+                  <option value="Formation professionnelle">Formation professionnelle</option>
+                  <option value="Diplôme">Diplôme</option>
+                </select>
+                <ChevronDown className="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Disponibilité *</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {['Toujours disponible', 'Disponible en permanence'].map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => {
-                        setFormData({...formData, availability: opt});
-                        if (errors.includes('availability')) setErrors(errors.filter(e => e !== 'availability'));
-                    }}
-                    className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-bold uppercase transition-all ${formData.availability === opt ? 'bg-orange-500 border-orange-500 text-white shadow-md' : errors.includes('availability') ? 'bg-red-50 border-red-200 text-red-500 font-bold' : 'bg-white border-blue-500/60 text-black'}`}
-                  >
-                    {opt}
-                  </button>
-                ))}
+              <div className="relative">
+                <select
+                  value={formData.availability || ''}
+                  onChange={(e) => {
+                      setFormData({...formData, availability: e.target.value});
+                      if (errors.includes('availability')) setErrors(errors.filter(e => e !== 'availability'));
+                  }}
+                  className={`${getInputClass('availability')} appearance-none pr-10 cursor-pointer`}
+                >
+                  <option value="">-- Sélectionner la disponibilité --</option>
+                  <option value="Toujours disponible">Toujours disponible</option>
+                  <option value="Disponible en permanence">Disponible en permanence</option>
+                </select>
+                <ChevronDown className="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
             <div>
@@ -655,31 +657,25 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de biens proposés : *</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {['Appartement', 'Terrain', 'Automobile'].map((opt) => {
-                  const selectedTypes = formData.propertyTypes ? formData.propertyTypes.split(',').map(s => s.trim()) : [];
-                  const isSelected = selectedTypes.includes(opt);
-                  return (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => {
-                          let newTypes: string[];
-                          if (isSelected) {
-                              newTypes = selectedTypes.filter(t => t !== opt);
-                          } else {
-                              newTypes = [...selectedTypes, opt];
-                          }
-                          const newPropertyTypesString = newTypes.join(', ');
-                          setFormData({...formData, propertyTypes: newPropertyTypesString});
-                          if (errors.includes('propertyTypes')) setErrors(errors.filter(e => e !== 'propertyTypes'));
-                      }}
-                      className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-bold uppercase transition-all ${isSelected ? 'bg-orange-500 border-orange-500 text-white shadow-md' : errors.includes('propertyTypes') ? 'bg-red-50 border-red-200 text-red-500 font-bold' : 'bg-white border-blue-500/60 text-black'}`}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
+              <div className="relative">
+                <select
+                  value={formData.propertyTypes || ''}
+                  onChange={(e) => {
+                      setFormData({...formData, propertyTypes: e.target.value});
+                      if (errors.includes('propertyTypes')) setErrors(errors.filter(e => e !== 'propertyTypes'));
+                  }}
+                  className={`${getInputClass('propertyTypes')} appearance-none pr-10 cursor-pointer`}
+                >
+                  <option value="">-- Sélectionner le type de biens --</option>
+                  <option value="Appartement">Appartement</option>
+                  <option value="Terrain">Terrain</option>
+                  <option value="Automobile">Automobile</option>
+                  <option value="Appartement, Terrain">Appartement & Terrain</option>
+                  <option value="Appartement, Automobile">Appartement & Automobile</option>
+                  <option value="Terrain, Automobile">Terrain & Automobile</option>
+                  <option value="Appartement, Terrain, Automobile">Tous les biens (Appartement, Terrain, Automobile)</option>
+                </select>
+                <ChevronDown className="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
             </div>
             <div>
@@ -790,21 +786,24 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de contrat *</label>
-              <select
-                value={formData.companyContractType}
-                onChange={(e) => {
-                    setFormData({...formData, companyContractType: e.target.value});
-                    if (errors.includes('companyContractType')) setErrors(errors.filter(e => e !== 'companyContractType'));
-                }}
-                className={getInputClass('companyContractType')}
-              >
-                <option value="">Sélectionner un contrat</option>
-                <option value="Temps plein">Temps plein</option>
-                <option value="Temps partiel">Temps partiel</option>
-                <option value="Temporaire">Temporaire</option>
-                <option value="Stage">Stage</option>
-                <option value="Autre">Autre</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={formData.companyContractType}
+                  onChange={(e) => {
+                      setFormData({...formData, companyContractType: e.target.value});
+                      if (errors.includes('companyContractType')) setErrors(errors.filter(e => e !== 'companyContractType'));
+                  }}
+                  className={`${getInputClass('companyContractType')} appearance-none pr-10 cursor-pointer`}
+                >
+                  <option value="">Sélectionner un contrat</option>
+                  <option value="Temps plein">Temps plein</option>
+                  <option value="Temps partiel">Temps partiel</option>
+                  <option value="Temporaire">Temporaire</option>
+                  <option value="Stage">Stage</option>
+                  <option value="Autre">Autre</option>
+                </select>
+                <ChevronDown className="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
             </div>
             <div>
               <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Salaire proposé *</label>

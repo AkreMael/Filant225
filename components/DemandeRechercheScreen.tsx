@@ -4,7 +4,7 @@ import { databaseService } from '../services/databaseService';
 import { imageService } from '../services/imageService';
 import { LeafletMap } from './LeafletMap';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
-import { ArrowLeft, Search, Loader2, Compass, MapPin, Briefcase, Building, CheckCircle, MessageSquare, AlertCircle, X, ChevronLeft, ChevronRight, Camera, Trash2, Check, RefreshCw, Heart, Share2 } from 'lucide-react';
+import { ArrowLeft, Search, Loader2, Compass, MapPin, Briefcase, Building, CheckCircle, MessageSquare, AlertCircle, X, ChevronLeft, ChevronRight, ChevronDown, Camera, Trash2, Check, RefreshCw, Heart, Share2 } from 'lucide-react';
 import { doc, onSnapshot, collection, query, orderBy, limit, getDocs, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -2597,31 +2597,21 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
                   {formProfileType === 'Agence' && (
                     <div className="p-5 bg-indigo-50/30 rounded-3xl border border-indigo-100/50 space-y-4 animate-in fade-in duration-200">
                       <div className="space-y-2.5">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 ml-1">Catégories de biens immobiliers proposés</label>
-                        <div className="flex flex-wrap gap-2">
-                          {["Terrain", "Appartement", "Résidence", "Bureau", "Commerce", "Véhicule", "Autre"].map((cat) => {
-                            const isSelected = formPropertyTypes.includes(cat);
-                            return (
-                              <button
-                                key={cat}
-                                type="button"
-                                onClick={() => {
-                                  if (isSelected) {
-                                    setFormPropertyTypes(prev => prev.filter(c => c !== cat));
-                                  } else {
-                                    setFormPropertyTypes(prev => [...prev, cat]);
-                                  }
-                                }}
-                                className={`py-2 px-4 rounded-full text-xs font-bold transition-all border active:scale-95 ${
-                                  isSelected
-                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                                }`}
-                              >
-                                {cat}
-                              </button>
-                            );
-                          })}
+                        <label className="text-[10px] font-black uppercase tracking-widest text-indigo-700 ml-1">Catégorie de biens immobiliers proposés *</label>
+                        <div className="relative">
+                          <select
+                            value={formPropertyTypes[0] || ''}
+                            onChange={(e) => {
+                              setFormPropertyTypes(e.target.value ? [e.target.value] : []);
+                            }}
+                            className="w-full px-5 py-4 bg-white border border-slate-200 focus:border-indigo-500 rounded-2xl text-black text-sm font-bold focus:outline-none transition-all font-sans appearance-none cursor-pointer pr-10"
+                          >
+                            <option value="">-- Sélectionner une catégorie --</option>
+                            {["Terrain", "Appartement", "Résidence", "Bureau", "Commerce", "Véhicule", "Autre"].map((cat) => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="w-5 h-5 text-slate-500 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
                       </div>
                     </div>

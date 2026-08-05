@@ -1609,43 +1609,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
             )}
 
             <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-2 gap-4">
-                    <button 
-                        onClick={() => handleMainServiceClick('worker_list')} 
-                        className={`aspect-square bg-white text-slate-900 rounded-3xl p-4 flex flex-col items-center justify-center text-center shadow-2xl transform active:scale-95 transition-all border-2 border-green-500 relative overflow-hidden group`}
-                    >
-                        <div className="relative z-10 flex flex-col items-center">
-                            <div className="absolute top-[-16px] left-[-16px] right-[-16px] h-1.5 bg-green-500"></div>
-                            <ServiceRapideIcon />
-                            <span className="text-sm font-black uppercase mt-3 tracking-tight">Travailleurs Qualifiés</span>
-                            <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-green-100 text-green-700`}>
-                                Disponibles
-                            </div>
-                        </div>
-                    </button>
-                    
-                    <button 
-                        onClick={() => handleMainServiceClick('location_hub', 'appartement')} 
-                        className={`aspect-square bg-white text-slate-900 rounded-3xl p-4 flex flex-col items-center justify-center text-center shadow-2xl transform active:scale-95 transition-all border-2 border-blue-500 relative overflow-hidden group`}
-                    >
-                        <div className="relative z-10 flex flex-col items-center">
-                            <div className="absolute top-[-16px] left-[-16px] right-[-16px] h-1.5 bg-blue-600"></div>
-                            <LargeHouseIcon />
-                            <span className="text-sm font-black uppercase mt-3 tracking-tight">Location d'appartements</span>
-                            <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-blue-100 text-blue-700`}>
-                                Voir offres
-                            </div>
-                        </div>
-                    </button>
-                </div>
-
-                <div 
-                    className="py-2 w-full flex justify-center"
-                >
-                    <div className="w-64 h-1.5 rounded-full bg-animated-search-border animate-search-border-flow shadow-lg"></div>
-                </div>
-
-                <div className="w-full flex justify-center items-center py-2 pl-6 gap-3">
+                <div className="w-full flex justify-center items-center py-1 gap-3">
                     {/* Services demandes button icon on the left */}
                     <button
                         onClick={() => {
@@ -1685,6 +1649,42 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                             Services en ligne
                         </span>
                         <Eye className="w-6 h-6 text-white animate-eye-blink shrink-0" />
+                    </button>
+                </div>
+
+                <div 
+                    className="py-1 w-full flex justify-center"
+                >
+                    <div className="w-64 h-1.5 rounded-full bg-animated-search-border animate-search-border-flow shadow-lg"></div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <button 
+                        onClick={() => handleMainServiceClick('worker_list')} 
+                        className={`aspect-square bg-white text-slate-900 rounded-3xl p-4 flex flex-col items-center justify-center text-center shadow-2xl transform active:scale-95 transition-all border-2 border-green-500 relative overflow-hidden group`}
+                    >
+                        <div className="relative z-10 flex flex-col items-center">
+                            <div className="absolute top-[-16px] left-[-16px] right-[-16px] h-1.5 bg-green-500"></div>
+                            <ServiceRapideIcon />
+                            <span className="text-sm font-black uppercase mt-3 tracking-tight">Travailleurs Qualifiés</span>
+                            <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-green-100 text-green-700`}>
+                                Disponibles
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button 
+                        onClick={() => handleMainServiceClick('location_hub', 'appartement')} 
+                        className={`aspect-square bg-white text-slate-900 rounded-3xl p-4 flex flex-col items-center justify-center text-center shadow-2xl transform active:scale-95 transition-all border-2 border-blue-500 relative overflow-hidden group`}
+                    >
+                        <div className="relative z-10 flex flex-col items-center">
+                            <div className="absolute top-[-16px] left-[-16px] right-[-16px] h-1.5 bg-blue-600"></div>
+                            <LargeHouseIcon />
+                            <span className="text-sm font-black uppercase mt-3 tracking-tight">Location d'appartements</span>
+                            <div className={`mt-2 px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-blue-100 text-blue-700`}>
+                                Voir offres
+                            </div>
+                        </div>
                     </button>
                 </div>
 

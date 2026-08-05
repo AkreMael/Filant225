@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Phone, MessageSquare, AlertTriangle, ShieldAlert, CheckCircle2, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Phone, MessageSquare, AlertTriangle, ShieldAlert, CheckCircle2, ChevronRight, ChevronDown, ArrowLeft } from 'lucide-react';
 import { User } from '../types';
 import { databaseService } from '../services/databaseService';
 
@@ -335,29 +335,27 @@ const EmergencyFormScreen: React.FC<EmergencyFormScreenProps> = ({
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">
                   Motif de l'urgence *
                 </label>
-                <div className="grid grid-cols-1 gap-2">
-                  {emergencyOptions.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => {
-                        setSelectedOption(opt);
-                        if (errors.includes('reason')) setErrors(errors.filter(e => e !== 'reason'));
-                      }}
-                      className={`w-full text-left py-3 px-4 rounded-2xl border transition-all flex items-center justify-between ${
-                        selectedOption === opt 
-                          ? 'bg-red-950/80 border-red-500 text-red-200 shadow-md' 
-                          : errors.includes('reason')
-                          ? 'bg-red-950/30 border-red-800 text-red-400'
-                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <span className="text-xs font-bold uppercase">{opt}</span>
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${selectedOption === opt ? 'border-red-500 bg-red-600' : 'border-slate-700'}`}>
-                        {selectedOption === opt && <div className="w-1.5 h-1.5 bg-white rounded-full"></div>}
-                      </div>
-                    </button>
-                  ))}
+                <div className="relative">
+                  <select
+                    value={selectedOption}
+                    onChange={(e) => {
+                      setSelectedOption(e.target.value);
+                      if (errors.includes('reason')) setErrors(errors.filter(e => e !== 'reason'));
+                    }}
+                    className={`w-full py-3.5 px-4 rounded-2xl border text-xs font-bold uppercase transition-all appearance-none cursor-pointer pr-10 outline-none ${
+                      errors.includes('reason')
+                        ? 'bg-red-950/30 border-red-800 text-red-400'
+                        : 'bg-slate-900 border-slate-800 text-slate-200 focus:border-red-500'
+                    }`}
+                  >
+                    <option value="" className="bg-slate-900 text-slate-400">-- Sélectionner un motif d'urgence --</option>
+                    {emergencyOptions.map((opt) => (
+                      <option key={opt} value={opt} className="bg-slate-900 text-slate-200">
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-5 h-5 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
