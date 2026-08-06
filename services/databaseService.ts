@@ -1350,6 +1350,55 @@ export const databaseService = {
     }
   },
 
+  renewOnlineProfile: async (phone: string) => {
+    try {
+      await databaseService.ensureAuth();
+      const sanitizedPhone = phone.replace(/\D/g, '');
+      const docRef = doc(db, 'Inscriptions', sanitizedPhone);
+      const existingSnap = await getDoc(docRef);
+      if (!existingSnap.exists()) return false;
+
+      const previousData = existingSnap.data() || {};
+      const onlineStart = Date.now();
+      const durationMs = 30 * 24 * 3600 * 1000; // 1 month
+      const onlineEnd = onlineStart + durationMs;
+
+      const updatedFields = {
+        isOnline: true,
+        onlinePending: false,
+        onlineApproved: true,
+        onlineRefused: false,
+        onlineStart,
+        onlineEnd,
+        updatedAt: serverTimestamp()
+      };
+
+      await setDoc(docRef, updatedFields, { merge: true });
+
+      const profileType = previousData.profileType || 'Travailleur';
+      let targetCollection = '';
+      if (profileType === 'Travailleur') targetCollection = 'Travailleurs';
+      else if (profileType === 'Propriétaire' || profileType === 'Equipement') targetCollection = 'Équipements';
+      else if (profileType === 'Agence' || profileType === 'Agence immobilière') targetCollection = 'Agences immobilières';
+      else if (profileType === 'Entreprise') targetCollection = 'Entreprises';
+
+      if (targetCollection) {
+        try {
+          const profRef = doc(db, targetCollection, sanitizedPhone);
+          await setDoc(profRef, updatedFields, { merge: true });
+        } catch (dbErr) {
+          console.warn("Error updating target collection during renewal:", dbErr);
+        }
+      }
+
+      databaseService.triggerEvolutionUpdate(sanitizedPhone);
+      return true;
+    } catch (e) {
+      console.error("Error renewing online profile:", e);
+      return false;
+    }
+  },
+
   saveOnlineAnnouncementActiveModifications: async (phone: string, adData: any) => {
     try {
       await databaseService.ensureAuth();

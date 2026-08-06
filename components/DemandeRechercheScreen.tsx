@@ -1096,6 +1096,24 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
     }
   };
 
+  const handleRenewProfile = () => {
+    if (!user?.phone) return;
+    const sanitizedPhone = user.phone.replace(/\D/g, '');
+    window.dispatchEvent(new CustomEvent('trigger-payment-view', {
+      detail: {
+        title: "Renouvellement de votre profil en ligne (1 mois)",
+        amount: "210",
+        paymentType: "Renouvellement de profil",
+        waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210",
+        serviceRequestId: `renew_${sanitizedPhone}_${Date.now()}`,
+        onSuccess: async () => {
+          await databaseService.renewOnlineProfile(user.phone);
+          alert("Félicitations ! Votre profil a été renouvelé avec succès pour un mois supplémentaire.");
+        }
+      }
+    }));
+  };
+
   const handleSuccessSubmission = async (
     item: InscriptionResult,
     amountPaid: number,
@@ -2007,91 +2025,102 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
 
                 {/* 2. Pinned Profile details */}
                 {pinnedProfile && (
-                  <div className="bg-transparent transition-all duration-300 flex items-center justify-between gap-4 animate-in slide-in-from-bottom-4 fade-in duration-300 py-1" id="pinned-selected-profile">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      {/* Glowing Maps locator icon badge on the left - clickable to open Maps */}
+                  <div className="bg-transparent transition-all duration-300 flex flex-col gap-3 animate-in slide-in-from-bottom-4 fade-in duration-300 py-1" id="pinned-selected-profile">
+                    {/* Provider Info Block at Top */}
+                    <div className="flex items-center gap-3.5 w-full bg-white dark:bg-slate-800/80 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm">
+                      {/* Provider Image / GPS Icon */}
                       <div 
                         onClick={(e) => {
                           e.stopPropagation();
                           openGoogleMapsRoute();
                         }}
-                        className={`w-11 h-11 rounded-full flex items-center justify-center border-2 flex-shrink-0 relative transition-colors duration-300 cursor-pointer hover:scale-105 active:scale-95 ${
+                        className={`w-12 h-12 rounded-full flex items-center justify-center border-2 flex-shrink-0 relative transition-all duration-300 cursor-pointer hover:scale-105 active:scale-95 shadow-md ${
                           isSearchingVille 
                             ? 'bg-orange-500/10 border-orange-400/80' 
-                            : 'bg-emerald-500/10 border-emerald-400/80 hover:bg-emerald-50/15'
+                            : 'bg-emerald-500/10 border-emerald-500/80 hover:bg-emerald-50/20'
                         }`}
                         title="Voir trajet sur Google Maps"
                       >
                         <span className={`absolute inset-0 rounded-full animate-ping ${
-                          isSearchingVille ? 'bg-orange-400/20' : 'bg-emerald-400/15'
+                          isSearchingVille ? 'bg-orange-400/20' : 'bg-emerald-400/20'
                         }`} style={{ animationDuration: isSearchingVille ? '1s' : '3s' }}></span>
-                        <MapPin className={`h-4.5 w-4.5 stroke-[2.5] transition-colors duration-300 ${
-                          isSearchingVille 
-                            ? 'text-orange-600' 
-                            : 'text-emerald-600'
-                        }`} />
+                        
+                        {pinnedProfile.profileImageUrl || pinnedProfile.imageLink ? (
+                          <img 
+                            src={pinnedProfile.profileImageUrl || pinnedProfile.imageLink} 
+                            alt={pinnedProfile.name}
+                            className="w-full h-full object-cover rounded-full"
+                          />
+                        ) : (
+                          <MapPin className={`h-5 w-5 stroke-[2.5] transition-colors duration-300 ${
+                            isSearchingVille 
+                              ? 'text-orange-600' 
+                              : 'text-emerald-600'
+                          }`} />
+                        )}
                       </div>
 
-                      {/* Information block with clean contrast text */}
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-1.5 flex-wrap leading-none">
-                          <span className="text-xs font-black uppercase tracking-tight text-slate-900 truncate">{pinnedProfile.name}</span>
-                          <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-widest">
+                      {/* Information block with clean typographic hierarchy */}
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs sm:text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white truncate">
+                            {pinnedProfile.name}
+                          </span>
+                          <span className="text-[9px] font-black text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20 shrink-0 uppercase tracking-wider">
                             {pinnedProfile.profileType === 'Propriétaire' ? 'ÉQUIPEMENT À LOUER' : pinnedProfile.profileType}
                           </span>
                         </div>
                         
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-black uppercase text-slate-600 block leading-none">{pinnedProfile.city}</span>
+                        <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase text-slate-600 dark:text-slate-300">
+                          <span className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-orange-500 inline shrink-0" />
+                            {pinnedProfile.city}
+                          </span>
                           {!isSearchingVille && (
-                            <span className="text-[9px] font-extrabold text-orange-600 bg-orange-600/10 px-1.5 py-0.5 rounded border border-orange-200/40 block leading-none">
-                              {formattedDistanceInfo}
-                            </span>
+                            <>
+                              <span className="text-slate-300 dark:text-slate-600">•</span>
+                              <span className="text-emerald-600 dark:text-emerald-400 font-black bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                {formattedDistanceInfo}
+                              </span>
+                            </>
                           )}
                         </div>
-                        
-                        <div className="pt-1 leading-none">
-                          <span className="text-[8px] text-slate-500 font-black uppercase tracking-wider block leading-none">
-                            {isSearchingVille ? 'CIBLAGE SATELLITE :' : 'ACTIVITÉ / TITRE :'}
-                          </span>
-                          <span className="text-[11px] text-slate-950 font-black block truncate leading-none mt-0.5 font-sans">
-                            {pinnedProfile.titleOrActivity}
-                          </span>
+
+                        <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate font-sans">
+                          <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase font-black mr-1">Activité :</span>
+                          {pinnedProfile.titleOrActivity || pinnedProfile.job || 'PRESTATAIRE DE SERVICE'}
                         </div>
                       </div>
                     </div>
 
-                    {/* Actions: DEMANDE and close buttons OR dynamic geolocating status */}
-                    <div className="flex-shrink-0 min-w-[125px] flex items-center justify-end">
-                      {isSearchingVille ? (
-                        <div className="flex flex-col items-end space-y-1 w-full">
-                          <div className="flex items-center gap-1 text-[#f25c34] font-black text-[9px] uppercase tracking-wide animate-pulse">
-                            <Loader2 className="w-3 h-3 text-[#f25c34] animate-spin" />
-                            <span>LOCALISATION...</span>
-                          </div>
-                          <div className="w-24 bg-slate-200 h-1 rounded-full overflow-hidden relative border border-slate-300/40">
-                            <div className="absolute top-0 left-0 bg-[#f25c34] h-full rounded-full" style={{ animation: 'loader-progress 2.8s linear' }} />
-                          </div>
+                    {/* Dynamic geolocating satellite status or Main Animated Call-To-Action Button below provider info */}
+                    {isSearchingVille ? (
+                      <div className="flex flex-col items-center justify-center p-2.5 bg-orange-500/5 dark:bg-orange-950/20 rounded-2xl border border-orange-500/20 space-y-1.5 w-full">
+                        <div className="flex items-center gap-1.5 text-[#f25c34] font-black text-[10px] uppercase tracking-wider animate-pulse">
+                          <Loader2 className="w-3.5 h-3.5 text-[#f25c34] animate-spin" />
+                          <span>Localisation GPS du prestataire en cours...</span>
                         </div>
-                      ) : (
-                        <div className="flex flex-col items-end gap-1.5 w-full">
-                          <button
-                            onClick={() => setShowActionOptions(pinnedProfile)}
-                            className="bg-[#f06e30] hover:bg-[#e05d1f] active:scale-95 text-white py-2 px-3 rounded-xl font-black uppercase text-[10px] tracking-normal transition-all shadow-md flex items-center justify-center gap-1.5 animate-in zoom-in-95 duration-200 cursor-pointer w-full text-center"
-                            id="pinned-submit-demande-btn"
-                          >
-                            <span>Cliquez ici pour soumettre votre demande</span>
-                          </button>
-                          <button 
-                            onClick={() => setPinnedProfile(null)}
-                            className="p-1 px-1.5 text-slate-500 hover:text-slate-800 rounded text-[9px] font-black uppercase transition-colors cursor-pointer"
-                            title="Désélectionner"
-                          >
-                            Masquer
-                          </button>
+                        <div className="w-full max-w-xs bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden relative">
+                          <div className="absolute top-0 left-0 bg-[#f25c34] h-full rounded-full" style={{ animation: 'loader-progress 2.8s linear' }} />
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowActionOptions(pinnedProfile)}
+                        className="relative w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 via-green-500 to-emerald-600 hover:from-emerald-700 hover:to-green-600 text-white font-black uppercase text-xs sm:text-sm tracking-wider rounded-2xl shadow-[0_4px_20px_rgba(16,185,129,0.45)] hover:shadow-[0_6px_25px_rgba(16,185,129,0.65)] active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 cursor-pointer group overflow-hidden border border-emerald-400/50 animate-pulse"
+                        id="pinned-submit-demande-btn"
+                        style={{ animationDuration: '2.5s' }}
+                      >
+                        <span className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl pointer-events-none" />
+                        <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping shrink-0" />
+                        <span className="relative z-10 text-center drop-shadow-sm">
+                          Cliquez ici pour soumettre votre demande
+                        </span>
+                        <svg className="w-4 h-4 text-white shrink-0 transform group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2140,40 +2169,92 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               </button>
             </div>
 
-            {/* Registration & Online status button */}
-            <button
-              onClick={() => {
-                if (onShowRegistration) {
-                  onShowRegistration();
-                } else {
-                  handleOpenOnlineForm();
-                }
-              }}
-              className={`py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 ${
-                currentUserAd?.onlinePending === true
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
-                  : currentUserAd?.isOnline === true || currentUserAd?.status === 'Actif'
-                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                    : 'bg-orange-500 hover:bg-orange-600 text-white'
-              }`}
-            >
-              {currentUserAd?.onlinePending === true ? (
-                <>
-                  <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0 animate-ping" />
-                  <span>🟡 Inscription en attente de validation (310 FCFA)</span>
-                </>
-              ) : currentUserAd?.isOnline === true || currentUserAd?.status === 'Actif' ? (
-                <>
-                  <span className="w-2 h-2 bg-emerald-400 rounded-full animate-ping shrink-0" />
-                  <span>🟢 En ligne - Modifier mon profil</span>
-                </>
-              ) : (
-                <>
+            {/* Registration, Expiration & Renewal status button */}
+            {(() => {
+              const isOnlineFlag = currentUserAd?.isOnline === true || currentUserAd?.status === 'Actif';
+              
+              let startMs = currentUserAd?.onlineStart;
+              if (!startMs && currentUserAd?.updatedAt?.seconds) startMs = currentUserAd.updatedAt.seconds * 1000;
+              if (!startMs && currentUserAd?.timestamp?.seconds) startMs = currentUserAd.timestamp.seconds * 1000;
+              if (!startMs && currentUserAd?.createdAt?.seconds) startMs = currentUserAd.createdAt.seconds * 1000;
+              if (!startMs) startMs = Date.now();
+
+              let endMs = currentUserAd?.onlineEnd;
+              if (!endMs) {
+                endMs = startMs + (30 * 24 * 3600 * 1000); // 1 month calculation from activation
+              }
+
+              const now = Date.now();
+              const isExpired = isOnlineFlag && now > endMs;
+              const isOnlineAndActive = isOnlineFlag && !isExpired;
+
+              const dateObj = new Date(endMs);
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const year = dateObj.getFullYear();
+              const expirationDateStr = `${day}/${month}/${year}`;
+
+              // Case 1: Published & active (within 1 month)
+              if (isOnlineAndActive) {
+                return (
+                  <button
+                    onClick={() => {
+                      if (onShowRegistration) onShowRegistration();
+                      else handleOpenOnlineForm();
+                    }}
+                    className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    title="Cliquer pour voir/modifier votre profil"
+                  >
+                    <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping shrink-0" />
+                    <span>Vous êtes en ligne jusqu'au : {expirationDateStr}</span>
+                  </button>
+                );
+              }
+
+              // Case 2: Expired 1 month period
+              if (isExpired) {
+                return (
+                  <button
+                    onClick={handleRenewProfile}
+                    className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-orange-500 hover:bg-orange-600 text-white animate-pulse cursor-pointer"
+                    title="Réactiver votre profil pour 1 mois supplémentaire (210 FCFA)"
+                  >
+                    <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0 animate-ping" />
+                    <span>🔄 Renouveler votre profil (210 FCFA)</span>
+                  </button>
+                );
+              }
+
+              // Case 3: Registration pending validation
+              if (currentUserAd?.onlinePending === true) {
+                return (
+                  <button
+                    onClick={() => {
+                      if (onShowRegistration) onShowRegistration();
+                      else handleOpenOnlineForm();
+                    }}
+                    className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-amber-500 hover:bg-amber-600 text-white animate-pulse"
+                  >
+                    <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0 animate-ping" />
+                    <span>🟡 Inscription en attente de validation (310 FCFA)</span>
+                  </button>
+                );
+              }
+
+              // Case 4: Not registered yet
+              return (
+                <button
+                  onClick={() => {
+                    if (onShowRegistration) onShowRegistration();
+                    else handleOpenOnlineForm();
+                  }}
+                  className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                >
                   <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0" />
                   <span>📝 S'inscrire sur FILANT°225 (310 FCFA)</span>
-                </>
-              )}
-            </button>
+                </button>
+              );
+            })()}
           </div>
 
           {/* Pending or Refused status announcements */}
@@ -3338,9 +3419,7 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
                   <button
                     type="button"
                     onClick={() => {
-                      setPinnedProfile(selectedAdDetail);
-                      setSelectedItemForForm(selectedAdDetail);
-                      setShowActionOptions(selectedAdDetail);
+                      handleRetrieveProfile(selectedAdDetail);
                       setSelectedAdDetail(null);
                     }}
                     className="w-full py-4 bg-[#ff4500] hover:bg-[#e03a00] active:scale-[0.98] text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
