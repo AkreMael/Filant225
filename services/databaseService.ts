@@ -1,5 +1,6 @@
 import type { User, Worker, Offer, FavoriteRequest, PersonalRequest, Notification } from '../types';
 import { db, auth, rtdb, storage } from '../firebase';
+import { whatsappService } from './whatsappService';
 import { doc, setDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, where, limit, increment } from 'firebase/firestore';
 import { ref as rtdbRef, push, set, serverTimestamp as rtdbTimestamp, get, update, onValue, remove, child } from 'firebase/database';
 import { ref as storageRef, uploadBytes, getDownloadURL, uploadString } from 'firebase/storage';
@@ -1309,10 +1310,8 @@ export const databaseService = {
       const sanitizedPhone = phone.replace(/\D/g, '');
       const docRef = doc(db, 'Inscriptions', sanitizedPhone);
       const userInscr = await getDoc(docRef);
-      let profileType = 'Travailleur';
-      if (userInscr.exists()) {
-        profileType = userInscr.data()?.profileType || 'Travailleur';
-      }
+      const userData = userInscr.exists() ? (userInscr.data() || {}) : {};
+      let profileType = userData.profileType || 'Travailleur';
 
       const isOneMonth = durationType === '1_month' || amount === 350;
       const durationMs = isOneMonth ? 30 * 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000;
@@ -1343,6 +1342,18 @@ export const databaseService = {
       }
 
       databaseService.triggerEvolutionUpdate(sanitizedPhone);
+
+      // Automatic WhatsApp Notifications
+      try {
+        const userName = userData.name || userData.fullName || 'Utilisateur';
+        const userCat = userData.category || userData.profileType || 'Services';
+        whatsappService.sendWelcomeMessage(sanitizedPhone, userName);
+        whatsappService.sendPaymentConfirmation(sanitizedPhone, amount ? amount.toString() : '310', 'Activation de profil en ligne');
+        whatsappService.sendRegistrationConfirmation(sanitizedPhone, userName, userCat);
+      } catch (waErr) {
+        console.warn("WhatsApp notification failed silently:", waErr);
+      }
+
       return true;
     } catch (e) {
       console.error("Error activating online announcement directly:", e);
@@ -1392,6 +1403,18 @@ export const databaseService = {
       }
 
       databaseService.triggerEvolutionUpdate(sanitizedPhone);
+
+      // Automatic WhatsApp Renewal Notifications
+      try {
+        const userName = previousData.name || previousData.fullName || 'Utilisateur';
+        const dateObj = new Date(onlineEnd);
+        const expStr = `${String(dateObj.getDate()).padStart(2, '0')}/${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+        whatsappService.sendPaymentConfirmation(sanitizedPhone, '210', 'Renouvellement de profil en ligne (1 mois)');
+        whatsappService.sendRenewalConfirmation(sanitizedPhone, userName, expStr);
+      } catch (waErr) {
+        console.warn("WhatsApp renewal notification failed silently:", waErr);
+      }
+
       return true;
     } catch (e) {
       console.error("Error renewing online profile:", e);

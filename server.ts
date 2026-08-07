@@ -638,6 +638,263 @@ async function startServer() {
     }
   });
 
+  // ==========================================
+  // META WHATSAPP BUSINESS CLOUD API WEBHOOK
+  // ==========================================
+
+  const DEFAULT_WHATSAPP_VERIFY_TOKEN = "filant225_whatsapp_verify_token_2026";
+  const DEFAULT_WHATSAPP_PHONE_NUMBER_ID = "1230379760162342";
+  const DEFAULT_WHATSAPP_BUSINESS_ACCOUNT_ID = "1794487291910492";
+  const DEFAULT_WHATSAPP_TOKEN = "EAALZAeAZCoxX8BSNzvwepCiPjF76UXcuvuYboeqGyvoeouPpPEvYMVVlWtzv36TgcGVHt4ue8brniKdT6hMnq7U8MMZCKTu7RtVPYZBebXWZBEm4a4jeGxSqNHaciR1UYtUnrWUshJk3Qurf2Ps4BB3skp5LScuhRH1cZA8MVSSTNsNRSUFTaUmCPAXrhBK7ZAxTSBhKsXI2WHR3q83l0eSjEpTDglNc8H8uvFt6rRCFHWs8YKNHpR85F863XCA36ZAyxxoWnEVBIZCd3mLkRXoaxYpZALgEY5W2mm5HH3GQZDZD";
+
+  // Webhook verification endpoint (GET) for Meta Cloud API
+  const handleWhatsappWebhookVerification = (req: express.Request, res: express.Response) => {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+
+    const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || DEFAULT_WHATSAPP_VERIFY_TOKEN;
+
+    console.log(`[WhatsApp Webhook GET] Verification request received. Mode: ${mode}, Token provided: ${token}`);
+
+    if (mode === "subscribe" && token === expectedToken) {
+      console.log("[WhatsApp Webhook GET] Verification successful! Responding with challenge.");
+      return res.status(200).send(challenge);
+    } else {
+      console.warn(`[WhatsApp Webhook GET] Verification failed. Expected token: ${expectedToken}, Provided: ${token}`);
+      return res.status(403).json({ 
+        error: "Forbidden", 
+        message: "Verify token mismatch or invalid hub.mode" 
+      });
+    }
+  };
+
+  // Webhook notification endpoint (POST) for Meta Cloud API
+  const handleWhatsappWebhookEvent = async (req: express.Request, res: express.Response) => {
+    try {
+      const body = req.body;
+      console.log("[WhatsApp Webhook POST] Notification received:", JSON.stringify(body, null, 2));
+
+      // Check if this is an event from a WhatsApp Business Account
+      if (body.object === "whatsapp_business_account" || body.entry) {
+        // Always respond immediately with 200 OK as required by Meta
+        res.status(200).send("EVENT_RECEIVED");
+
+        // Asynchronously process and log event in Firestore
+        try {
+          const dbInstance = await getClientDb();
+          const entries = body.entry || [];
+
+          for (const entry of entries) {
+            const changes = entry.changes || [];
+            for (const change of changes) {
+              const value = change.value || {};
+              const messagingProduct = value.messaging_product;
+              const metadata = value.metadata || {};
+              const contacts = value.contacts || [];
+              const messages = value.messages || [];
+              const statuses = value.statuses || [];
+
+              // Store incoming messages if present
+              if (messages.length > 0) {
+                for (const msg of messages) {
+                  const senderPhone = msg.from;
+                  const messageId = msg.id;
+                  const timestamp = msg.timestamp;
+                  const type = msg.type;
+                  let content = "";
+
+                  if (type === "text") {
+                    content = msg.text?.body || "";
+                  } else if (type === "interactive") {
+                    content = JSON.stringify(msg.interactive);
+                  } else if (type === "button") {
+                    content = msg.button?.text || "";
+                  } else {
+                    content = `[${type} message]`;
+                  }
+
+                  const contactInfo = contacts.find((c: any) => c.wa_id === senderPhone) || {};
+                  const senderName = contactInfo.profile?.name || "Inconnu";
+
+                  console.log(`[WhatsApp Incoming Message] From: ${senderName} (${senderPhone}): "${content}"`);
+
+                  await clientAddDoc(clientCollection(dbInstance, "WhatsappMessages"), {
+                    messageId,
+                    fromPhone: senderPhone,
+                    fromName: senderName,
+                    type,
+                    content,
+                    rawMessage: msg,
+                    metadata,
+                    direction: "inbound",
+                    timestamp: timestamp ? new Date(Number(timestamp) * 1000) : clientServerTimestamp(),
+                    createdAt: clientServerTimestamp()
+                  });
+                }
+              }
+
+              // Store delivery/read status updates if present
+              if (statuses.length > 0) {
+                for (const statusObj of statuses) {
+                  console.log(`[WhatsApp Status Update] Message ${statusObj.id} status: ${statusObj.status}`);
+                  await clientAddDoc(clientCollection(dbInstance, "WhatsappStatusUpdates"), {
+                    messageId: statusObj.id,
+                    recipientId: statusObj.recipient_id,
+                    status: statusObj.status,
+                    timestamp: statusObj.timestamp ? new Date(Number(statusObj.timestamp) * 1000) : clientServerTimestamp(),
+                    rawStatus: statusObj,
+                    createdAt: clientServerTimestamp()
+                  });
+                }
+              }
+            }
+          }
+        } catch (dbErr) {
+          console.error("Error storing WhatsApp webhook event in Firestore:", dbErr);
+        }
+      } else {
+        // Unknown or test payload
+        return res.status(200).send("EVENT_RECEIVED");
+      }
+    } catch (err: any) {
+      console.error("Error handling WhatsApp Webhook POST event:", err);
+      // Ensure Meta gets 200 OK so it doesn't continuously retry on server errors
+      if (!res.headersSent) {
+        return res.status(200).send("EVENT_RECEIVED");
+      }
+    }
+  };
+
+  // Register endpoints on multiple standard routes for maximum flexibility
+  app.get("/api/webhook/whatsapp", handleWhatsappWebhookVerification);
+  app.get("/api/whatsapp/webhook", handleWhatsappWebhookVerification);
+  app.get("/webhook/whatsapp", handleWhatsappWebhookVerification);
+
+  app.post("/api/webhook/whatsapp", handleWhatsappWebhookEvent);
+  app.post("/api/whatsapp/webhook", handleWhatsappWebhookEvent);
+  app.post("/webhook/whatsapp", handleWhatsappWebhookEvent);
+
+  // Status check endpoint for Meta Developer Console verification debugging
+  app.get("/api/whatsapp/status", (req, res) => {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || DEFAULT_WHATSAPP_VERIFY_TOKEN;
+    const hasToken = !!process.env.WHATSAPP_TOKEN;
+    const hasPhoneNumberId = !!process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const appUrl = process.env.APP_URL || "https://filant225.com";
+
+    res.json({
+      status: "online",
+      message: "WhatsApp Business Cloud API Webhook est actif et prêt.",
+      webhookUrls: {
+        primary: `${appUrl}/api/webhook/whatsapp`,
+        secondary: `${appUrl}/api/whatsapp/webhook`
+      },
+      verifyToken: verifyToken,
+      environmentConfig: {
+        WHATSAPP_VERIFY_TOKEN_SET: !!process.env.WHATSAPP_VERIFY_TOKEN,
+        WHATSAPP_TOKEN_SET: hasToken,
+        WHATSAPP_PHONE_NUMBER_ID_SET: hasPhoneNumberId,
+        WHATSAPP_BUSINESS_ACCOUNT_ID_SET: !!process.env.WHATSAPP_BUSINESS_ACCOUNT_ID
+      },
+      instructions: {
+        step1: "Allez sur la console Meta for Developers (https://developers.facebook.com/).",
+        step2: "Sélectionnez votre application > WhatsApp > Configuration.",
+        step3: "Dans la section Webhook, cliquez sur Modifier.",
+        step4: `Entrez l'URL de rappel : ${appUrl}/api/webhook/whatsapp (ou votre domaine personnalisé).`,
+        step5: `Entrez le jeton de vérification : ${verifyToken}`,
+        step6: "Cliquez sur 'Vérifier et enregistrer'.",
+        step7: "Abonnez-vous aux champs d'événements : 'messages' et 'message_template_status_update'."
+      }
+    });
+  });
+
+  // Outbound message sending endpoint via Meta Cloud API
+  app.post("/api/whatsapp/send", async (req, res) => {
+    try {
+      const { to, message, templateName, languageCode, components } = req.body;
+      const token = process.env.WHATSAPP_TOKEN || DEFAULT_WHATSAPP_TOKEN;
+      const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || DEFAULT_WHATSAPP_PHONE_NUMBER_ID;
+
+      if (!to) {
+        return res.status(400).json({ error: "Numéro de téléphone destinataire ('to') requis." });
+      }
+
+      if (!token || !phoneNumberId) {
+        return res.status(400).json({ 
+          error: "Configuration Meta WhatsApp incomplète.", 
+          details: "Veuillez configurer WHATSAPP_TOKEN et WHATSAPP_PHONE_NUMBER_ID dans vos variables d'environnement." 
+        });
+      }
+
+      const sanitizedPhone = to.replace(/\D/g, '');
+
+      let payload: any = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: sanitizedPhone,
+      };
+
+      if (templateName) {
+        payload.type = "template";
+        payload.template = {
+          name: templateName,
+          language: { code: languageCode || "fr" }
+        };
+        if (components && Array.isArray(components)) {
+          payload.template.components = components;
+        }
+      } else {
+        payload.type = "text";
+        payload.text = { preview_url: false, body: message };
+      }
+
+      const metaUrl = `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`;
+      const response = await fetch(metaUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        console.error("Error response from Meta WhatsApp API:", responseData);
+        return res.status(response.status).json({
+          error: "Erreur lors de l'envoi du message WhatsApp via Meta API",
+          metaError: responseData
+        });
+      }
+
+      // Log outbound message to Firestore
+      try {
+        const dbInstance = await getClientDb();
+        await clientAddDoc(clientCollection(dbInstance, "WhatsappMessages"), {
+          messageId: responseData.messages?.[0]?.id || null,
+          toPhone: sanitizedPhone,
+          content: message || `Template: ${templateName}`,
+          rawResponse: responseData,
+          direction: "outbound",
+          createdAt: clientServerTimestamp()
+        });
+      } catch (logErr) {
+        console.warn("Could not log outbound WhatsApp message to Firestore:", logErr);
+      }
+
+      return res.json({
+        success: true,
+        messageId: responseData.messages?.[0]?.id,
+        metaResponse: responseData
+      });
+
+    } catch (err: any) {
+      console.error("Exception in /api/whatsapp/send:", err);
+      return res.status(500).json({ error: "Erreur serveur lors de l'envoi WhatsApp", details: err.message });
+    }
+  });
+
   // Endpoint to generate beautiful professional sharing cards with Jimp
   app.get("/api/share-image", async (req, res) => {
     try {
