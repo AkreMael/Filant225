@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { databaseService } from '../services/databaseService';
-import { whatsappService } from '../services/whatsappService';
 import SpeakerIcon from './common/SpeakerIcon';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
 import Typewriter from './common/Typewriter';
@@ -29,12 +28,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShowPopup }
   const [isLoading, setIsLoading] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
-  // Phone OTP verification state
-  const [showOtpStep, setShowOtpStep] = useState(false);
-  const [generatedOtp, setGeneratedOtp] = useState('');
-  const [userEnteredOtp, setUserEnteredOtp] = useState('');
-  const [pendingUser, setPendingUser] = useState<User | null>(null);
-
   useEffect(() => {
     const handleViewportResize = () => {
       if (window.visualViewport) {
@@ -54,39 +47,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShowPopup }
     if (tempCity) setCity(tempCity);
   }, []);
   
-  const initiatePhoneVerification = async (user: User) => {
-    const isVerified = localStorage.getItem(`filant_verified_${user.phone}`);
-    if (isVerified === 'true') {
-      onLoginSuccess(user);
-      return;
-    }
-
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(otpCode);
-    setPendingUser(user);
-    setShowOtpStep(true);
-
-    try {
-      await whatsappService.sendVerificationCode(user.phone, otpCode);
-    } catch (err) {
-      console.warn("Failed sending WhatsApp verification code:", err);
-    }
-  };
-
-  const verifyOtpCode = () => {
-    if (!pendingUser) return;
-
-    if (userEnteredOtp.trim() === generatedOtp || userEnteredOtp.trim() === '225225') {
-      localStorage.setItem(`filant_verified_${pendingUser.phone}`, 'true');
-      localStorage.removeItem('filant_temp_name');
-      localStorage.removeItem('filant_temp_city');
-      setShowOtpStep(false);
-      onLoginSuccess(pendingUser);
-    } else {
-      onShowPopup("Code de vérification incorrect. Veuillez réessayer.", "alert");
-    }
-  };
-
   const handleRegister = async () => {
     const sanitizedPhone = phone.replace(/\s/g, '');
     
@@ -109,7 +69,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShowPopup }
     try {
         const { user, error: registerError } = await databaseService.registerUser(name, city, sanitizedPhone);
         if (user) {
-          await initiatePhoneVerification(user);
+          // Clear temp data
+          localStorage.removeItem('filant_temp_name');
+          localStorage.removeItem('filant_temp_city');
+          onLoginSuccess(user);
         } else {
           onShowPopup(registerError || "Erreur lors de l'inscription.", "alert");
         }
@@ -146,7 +109,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShowPopup }
     try {
         const { user, error: loginError } = await databaseService.loginUser(loginPhone);
         if (user) {
-          await initiatePhoneVerification(user);
+          onLoginSuccess(user);
         } else {
           onShowPopup(loginError || "Erreur de connexion.", "alert");
         }
@@ -295,53 +258,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess, onShowPopup }
           </div>
         </div>
       </div>
-
-      {/* OTP Verification Modal */}
-      {showOtpStep && (
-        <div className="fixed inset-0 z-[3000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 sm:p-8 shadow-2xl border border-gray-100 space-y-6 text-center animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto text-2xl font-black">
-              🔐
-            </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-900 uppercase">Vérification de numéro</h3>
-              <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-                Un code de vérification à 6 chiffres a été envoyé sur WhatsApp au <strong className="text-slate-800">+225 {pendingUser?.phone}</strong>.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <input
-                type="text"
-                maxLength={6}
-                placeholder="000000"
-                value={userEnteredOtp}
-                onChange={(e) => setUserEnteredOtp(e.target.value.replace(/\D/g, ''))}
-                className="w-full text-center tracking-[0.5em] text-2xl font-black py-4 bg-gray-50 border-2 border-orange-200 rounded-2xl text-orange-600 focus:border-orange-500 outline-none"
-              />
-              <p className="text-[11px] text-gray-400">Entrez le code reçu pour valider la connexion.</p>
-            </div>
-
-            <div className="flex flex-col gap-2.5 pt-2">
-              <button
-                onClick={verifyOtpCode}
-                className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white font-black uppercase text-xs tracking-wider rounded-2xl shadow-lg active:scale-95 transition-all"
-              >
-                Valider mon numéro
-              </button>
-              <button
-                onClick={() => {
-                  setShowOtpStep(false);
-                  setUserEnteredOtp('');
-                }}
-                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-xs uppercase tracking-wider rounded-2xl transition-all"
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

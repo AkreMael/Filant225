@@ -607,13 +607,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
   );
 
   const handleLogoutClick = () => {
-    onShowPopup("Voulez-vous vous déconnecter de votre session ?", 'confirm', (close) => { 
-      if (user?.phone) {
-        localStorage.removeItem(`filant_verified_${user.phone}`);
-      }
-      onLogout(); 
-      close(); 
-    });
+    onShowPopup("Voulez-vous vous déconnecter de votre session ?", 'confirm', (close) => { onLogout(); close(); });
   };
 
   const handleClearContacts = () => {
