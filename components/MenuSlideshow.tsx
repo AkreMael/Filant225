@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 
 const SLIDES = [
     {
@@ -31,114 +30,57 @@ const SLIDES = [
 
 export const MenuSlideshow: React.FC = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [isHovered, setIsHovered] = useState(false);
-    const touchStartX = useRef<number | null>(null);
 
-    // Auto slideshow timer: 10 seconds (10000 ms)
+    // Preload all slide images into browser cache for instant lag-free crossfades
     useEffect(() => {
-        if (isHovered) return;
+        SLIDES.forEach((slide) => {
+            const img1 = new Image();
+            img1.src = slide.src;
+            const img2 = new Image();
+            img2.src = slide.fallback;
+        });
+    }, []);
 
+    // Automatic slideshow changing every 10 seconds (10000ms) without user interaction
+    useEffect(() => {
         const timer = setInterval(() => {
-            setCurrentIndex((prevIndex) => (prevIndex + 1) % SLIDES.length);
+            setCurrentIndex((prev) => (prev + 1) % SLIDES.length);
         }, 10000);
 
         return () => clearInterval(timer);
-    }, [isHovered]);
-
-    const handlePrev = (e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        setCurrentIndex((prev) => (prev === 0 ? SLIDES.length - 1 : prev - 1));
-    };
-
-    const handleNext = (e?: React.MouseEvent) => {
-        e?.stopPropagation();
-        setCurrentIndex((prev) => (prev + 1) % SLIDES.length);
-    };
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-        touchStartX.current = e.touches[0].clientX;
-    };
-
-    const handleTouchEnd = (e: React.TouchEvent) => {
-        if (touchStartX.current === null) return;
-        const touchEndX = e.changedTouches[0].clientX;
-        const diffX = touchStartX.current - touchEndX;
-
-        if (Math.abs(diffX) > 40) {
-            if (diffX > 0) {
-                handleNext();
-            } else {
-                handlePrev();
-            }
-        }
-        touchStartX.current = null;
-    };
+    }, []);
 
     return (
-        <div 
-            className="mt-4 w-full rounded-2xl overflow-hidden shadow-lg border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900 relative group select-none"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-        >
-            {/* Image Slide Container */}
-            <div className="w-full relative overflow-hidden flex items-center justify-center">
-                <AnimatePresence mode="wait">
-                    <motion.img
-                        key={currentIndex}
-                        src={SLIDES[currentIndex].src}
-                        onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            if (target.src !== SLIDES[currentIndex].fallback) {
-                                target.src = SLIDES[currentIndex].fallback;
-                            }
-                        }}
-                        alt={SLIDES[currentIndex].alt}
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
-                        transition={{ duration: 0.5, ease: "easeInOut" }}
-                        className="w-full h-auto block object-contain"
-                        referrerPolicy="no-referrer"
-                    />
-                </AnimatePresence>
-            </div>
-
-            {/* Navigation Arrows */}
-            <button
-                onClick={handlePrev}
-                aria-label="Image précédente"
-                className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all duration-200 opacity-80 group-hover:opacity-100 z-10"
-            >
-                <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-
-            <button
-                onClick={handleNext}
-                aria-label="Image suivante"
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all duration-200 opacity-80 group-hover:opacity-100 z-10"
-            >
-                <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
-            </button>
-
-            {/* Pagination Indicators / Dots */}
-            <div className="absolute bottom-2 left-0 right-0 flex justify-center items-center gap-1.5 z-10">
-                {SLIDES.map((slide, idx) => (
-                    <button
-                        key={slide.id}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setCurrentIndex(idx);
-                        }}
-                        aria-label={`Aller à la diapositive ${idx + 1}`}
-                        className={`transition-all duration-300 rounded-full ${
-                            idx === currentIndex 
-                                ? 'w-6 h-2 bg-orange-500 shadow-md' 
-                                : 'w-2 h-2 bg-white/70 hover:bg-white shadow-sm'
-                        }`}
-                    />
-                ))}
+        <div className="mt-3 w-full relative overflow-hidden select-none pointer-events-none">
+            {/* Aspect ratio container locks height to exact image proportions (1250x450), avoiding any height shift or layout jitter */}
+            <div className="w-full relative aspect-[1250/450] max-h-[380px] overflow-hidden">
+                {SLIDES.map((slide, idx) => {
+                    const isActive = idx === currentIndex;
+                    return (
+                        <motion.img
+                            key={slide.id}
+                            src={slide.src}
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                if (target.src !== slide.fallback) {
+                                    target.src = slide.fallback;
+                                }
+                            }}
+                            alt={slide.alt}
+                            initial={false}
+                            animate={{
+                                opacity: isActive ? 1 : 0,
+                                zIndex: isActive ? 10 : 1
+                            }}
+                            transition={{
+                                duration: 0.5,
+                                ease: "easeInOut"
+                            }}
+                            className="absolute inset-0 w-full h-full object-contain pointer-events-none block"
+                            referrerPolicy="no-referrer"
+                        />
+                    );
+                })}
             </div>
         </div>
     );

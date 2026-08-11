@@ -1523,7 +1523,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                         <span className="text-white bg-orange-600 rounded-lg px-3 py-1 text-4xl sm:text-5xl ml-2 shadow-xl select-none animate-logo-225">225</span>
                     </h1>
                     <p className={`font-black text-xs mt-3 text-center uppercase tracking-[0.3em] ${isClient ? 'text-slate-400' : 'opacity-80'}`}>{menuTitle}</p>
-                    <div className="w-full">
+                    <div className="w-full -mx-6 w-[calc(100%+3rem)]">
                         <MenuSlideshow />
                     </div>
                 </div>
