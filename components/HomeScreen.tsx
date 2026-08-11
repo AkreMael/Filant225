@@ -11,6 +11,7 @@ import { chatService } from '../services/chatService';
 import { isAdmin, getCardType } from '../utils/authUtils';
 import { getServiceItemImage } from './InterventionShopScreen';
 import { motion, AnimatePresence } from 'motion/react';
+import MenuSlideshow from './MenuSlideshow';
 import { db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
@@ -1522,13 +1523,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                         <span className="text-white bg-orange-600 rounded-lg px-3 py-1 text-4xl sm:text-5xl ml-2 shadow-xl select-none animate-logo-225">225</span>
                     </h1>
                     <p className={`font-black text-xs mt-3 text-center uppercase tracking-[0.3em] ${isClient ? 'text-slate-400' : 'opacity-80'}`}>{menuTitle}</p>
-                    <div className="mt-4 w-full max-w-md rounded-2xl overflow-hidden shadow-lg border border-slate-200/80 dark:border-slate-700/80 bg-white">
-                        <img 
-                            src="/images/workers_banner.jpg" 
-                            alt="Travailleurs et professionnels Filant 225" 
-                            className="w-full h-auto object-cover max-h-56 sm:max-h-64" 
-                            referrerPolicy="no-referrer"
-                        />
+                    <div className="w-full">
+                        <MenuSlideshow />
                     </div>
                 </div>
             </div>
