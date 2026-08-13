@@ -102,6 +102,12 @@ async function startServer() {
   }
   app.use("/uploads", express.static(uploadsDir));
 
+  // Health check and connection ping endpoint
+  app.get("/api/ping", (req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.json({ status: "ok", timestamp: Date.now() });
+  });
+
   app.post("/api/upload-base64", async (req, res) => {
     try {
       const { base64, filename } = req.body;

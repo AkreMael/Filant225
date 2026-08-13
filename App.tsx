@@ -32,6 +32,7 @@ import AdminLogin from './components/AdminLogin';
 import StageFormationHubScreen from './components/StageFormationHubScreen';
 import { DemandeRechercheScreen } from './components/DemandeRechercheScreen';
 import { EvolutionScreen } from './components/EvolutionScreen';
+import OfflineScreen from './components/OfflineScreen';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Check, User as UserIcon, QrCode as QrCodeIcon, ShoppingBag as ShoppingBagIcon, Search, Eye } from 'lucide-react';
 import { isAdmin } from './utils/authUtils';
@@ -203,6 +204,55 @@ const App: React.FC = () => {
   }, []);
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => databaseService.getActiveUser());
+  const [isOffline, setIsOffline] = useState(() => {
+    if (typeof navigator !== 'undefined') {
+      return !navigator.onLine;
+    }
+    return false;
+  });
+
+  const checkRealConnection = useCallback(async (): Promise<boolean> => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return false;
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`/api/ping?_t=${Date.now()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+        signal: controller.signal
+      }).catch(async () => {
+        return await fetch(`/favicon.ico?_t=${Date.now()}`, { method: 'HEAD', cache: 'no-store', signal: controller.signal });
+      });
+      clearTimeout(timeoutId);
+      return !!(res && (res.ok || res.status === 200 || res.status === 304));
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      const ok = await checkRealConnection();
+      if (ok) {
+        setIsOffline(false);
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [checkRealConnection]);
   const [enAttenteTraitement, setEnAttenteTraitement] = useState(() => {
     const activeUser = databaseService.getActiveUser();
     if (activeUser?.phone) {
@@ -1749,6 +1799,22 @@ const App: React.FC = () => {
   }
 
   const isAdminView = shouldShowAdminDashboard || (menuView === 'admin_dashboard' && activeTab === Tab.Menu) || (activeTab === Tab.Admin && isAdminAuthenticated);
+
+  // Dedicated Offline Screen - Absolute priority over all views during network failure
+  if (isOffline) {
+    return (
+      <OfflineScreen 
+        onRetry={async () => {
+          const connected = await checkRealConnection();
+          if (connected) {
+            setIsOffline(false);
+            return true;
+          }
+          return false;
+        }} 
+      />
+    );
+  }
 
   if (currentUser?.isBlocked) {
     if (blockedView === 'carte') {

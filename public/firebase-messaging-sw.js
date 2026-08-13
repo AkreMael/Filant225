@@ -30,10 +30,11 @@ messaging.onBackgroundMessage((payload) => {
 });
 
 // ====== PWA CACHE IMPLEMENTATION FOR OFFLINE COMPATIBILITY ======
-const CACHE_NAME = 'filant225-pwa-cache-v1';
+const CACHE_NAME = 'filant225-pwa-cache-v2';
 const ASSETS_TO_PRECACHE = [
   '/',
   'index.html',
+  'offline.html',
   'manifest.json',
   'icons/icon-72x72.png',
   'icons/icon-96x96.png',
@@ -113,9 +114,9 @@ self.addEventListener('fetch', (event) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // Redirect page navigation offline to the standard PWA index.html shell
-          if (request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('/index.html') || caches.match('/');
+          // Redirect page navigation offline to the standard PWA offline page or shell
+          if (request.headers.get('accept')?.includes('text/html') || request.mode === 'navigate') {
+            return caches.match('/offline.html') || caches.match('/index.html') || caches.match('/');
           }
           return new Response('Connexion perdue. FILANT°225 nécessite une connexion internet pour actualiser ces données.', {
             status: 503,
