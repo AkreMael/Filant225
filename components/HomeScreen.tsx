@@ -1485,30 +1485,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                         </svg>
                     </button>
                 ) : (
-                    <div 
-                        onClick={() => setActiveTab(Tab.MyQRCode)}
-                        className="w-full p-3.5 sm:p-4 bg-gradient-to-r from-orange-500 via-orange-600 to-amber-500 hover:from-orange-600 hover:to-amber-600 active:scale-[0.99] transition-all duration-200 text-white rounded-2xl shadow-md shadow-orange-500/20 border border-orange-400/30 cursor-pointer group flex flex-col sm:flex-row items-center justify-between gap-3"
-                    >
-                        <div className="flex items-center gap-2.5 text-left flex-1 min-w-0">
-                            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-xs border border-white/25 group-hover:scale-105 transition-transform">
-                                <IdCardIcon className="w-4.5 h-4.5 text-white" />
-                            </div>
-                            <p className="text-[12px] sm:text-[13px] font-semibold text-white/95 leading-snug">
-                                Veuillez vous inscrire pour être visible partout en Côte d'Ivoire et permettre aux clients de vous contacter.
-                            </p>
-                        </div>
+                    <div className="w-full text-left pt-2 pb-1">
+                        <p className={`font-bold text-sm sm:text-base leading-snug ${isClient ? 'text-slate-900 dark:text-white' : 'text-white'}`}>
+                            Veuillez vous inscrire pour être visible partout en Côte d'Ivoire et permettre aux clients de vous contacter.
+                        </p>
                         <button 
                             type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTab(Tab.MyQRCode);
-                            }}
-                            className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-orange-50 text-orange-600 active:scale-95 font-black text-xs sm:text-sm uppercase tracking-wider rounded-xl shadow-md flex items-center justify-center gap-1.5 shrink-0 transition-all cursor-pointer"
+                            onClick={() => setActiveTab(Tab.MyQRCode)}
+                            className="mt-2 inline-block font-black text-base sm:text-lg text-amber-500 hover:text-amber-400 active:scale-95 transition-all cursor-pointer bg-transparent border-none p-0 text-left focus:outline-none"
                         >
-                            <span>S'inscrire</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-orange-600 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                            </svg>
+                            S'inscrire«
                         </button>
                     </div>
                 )}
