@@ -930,6 +930,36 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     }
   };
 
+  const getPhotosConfig = () => {
+    switch (selectedProfile) {
+      case 'Travailleur':
+        return {
+          title: 'PHOTOS DE VOUS ET DE VOTRE ACTIVITÉ (3 MAXIMUM)',
+          description: 'Ajoutez jusqu’à 3 photos maximum : des photos de vous et de votre activité professionnelle ou de vos réalisations.'
+        };
+      case 'Entreprise':
+        return {
+          title: 'PHOTOS DE VOTRE ENTREPRISE ET DE VOTRE ACTIVITÉ (3 MAXIMUM)',
+          description: 'Ajoutez jusqu’à 3 photos maximum : des photos de votre entreprise, de vos locaux, de votre activité ou de vos réalisations. Vous pouvez également ajouter votre logo.'
+        };
+      case 'Propriétaire':
+        return {
+          title: 'PHOTOS DE VOS ÉQUIPEMENTS (3 MAXIMUM)',
+          description: 'Ajoutez jusqu’à 3 photos maximum de vos équipements disponibles à la location. Les photos doivent permettre aux clients de voir clairement les équipements proposés.'
+        };
+      case 'Agence':
+        return {
+          title: 'PHOTOS DE VOTRE AGENCE ET DE VOTRE ACTIVITÉ (3 MAXIMUM)',
+          description: 'Ajoutez jusqu’à 3 photos maximum : une photo de la devanture de votre agence, votre logo et/ou une photo de vous ou de votre équipe.'
+        };
+      default:
+        return {
+          title: 'PHOTOS DE VOTRE ACTIVITÉ (3 MAXIMUM)',
+          description: 'Ajoutez jusqu’à 3 photos maximum pour illustrer votre profil, vos travaux, équipements ou locaux.'
+        };
+    }
+  };
+
   const isStep2Form = step === 2 && !isSaved;
 
   return (
@@ -1145,15 +1175,15 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                   <div className="mt-6 pt-6 border-t border-slate-200">
                     <div className="flex items-center justify-between mb-2">
                       <label className="text-[11px] font-black text-slate-800 uppercase tracking-[0.15em] flex items-center gap-2">
-                        <Camera className="w-4 h-4 text-blue-600" />
-                        <span>Photos de votre activité (3 maximum)</span>
+                        <Camera className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>{getPhotosConfig().title}</span>
                       </label>
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full shrink-0">
                         {(formData.photos || []).length} / 3
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mb-3 font-medium">
-                      Ajoutez jusqu'à 3 photos maximum pour illustrer votre profil, vos travaux, équipements ou locaux.
+                    <p className="text-[11px] text-slate-500 mb-3 font-medium leading-relaxed">
+                      {getPhotosConfig().description}
                     </p>
 
                     <div className="grid grid-cols-3 gap-3">
