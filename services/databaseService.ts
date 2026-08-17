@@ -2643,6 +2643,7 @@ export const databaseService = {
 
   saveServiceRequest: async (requestData: any) => {
     try {
+      await databaseService.ensureAuth();
       const docRef = await addDoc(collection(db, 'ServiceRequests'), {
         ...requestData,
         timestamp: serverTimestamp(),
@@ -2682,6 +2683,7 @@ export const databaseService = {
 
   triggerServiceRequestValidationFlow: async (requestId: string, paymentRtdbPath?: string | null) => {
     try {
+      await databaseService.ensureAuth();
       const reqRef = doc(db, 'ServiceRequests', requestId);
       const snap = await getDoc(reqRef);
       if (!snap.exists()) {
@@ -2712,7 +2714,7 @@ export const databaseService = {
       // Notify provider in MessageriePrivee
       if (prestatairePhone) {
         const providerMsg = {
-          text: `🔔 NOUVELLE DEMANDE DE SERVICE DE ${clientName} (${clientCity})\n\nService demandé : ${serviceTitle}\nMontant : ${amount} FCFA\n\nVous pouvez gérer cette demande directement en cliquant sur le bouton "Services" (icône sac de shopping) sur votre écran d'accueil !`,
+          text: `🔔 NOUVELLE DEMANDE DE SERVICE DE ${clientName} (${clientCity})\n\n• Service demandé : ${serviceTitle}\n• Montant : ${amount} FCFA\n\n👉 Vous pouvez consulter et valider ou refuser cette demande directement en cliquant sur l'icône « Services » sur votre écran d'accueil.`,
           sender: 'admin',
           timestamp: new Date().toISOString(),
           isRead: false,
@@ -2724,7 +2726,7 @@ export const databaseService = {
       // Notify client in MessageriePrivee
       if (clientPhone) {
         const clientMsg = {
-          text: `✅ Votre paiement de ${amount} FCFA pour la demande de service avec ${prestataireName} a été validé. La demande a été transmise au prestataire pour acceptation. Vous serez notifié dès qu'il aura répondu.`,
+          text: `✅ Votre paiement de ${amount} FCFA pour la demande de service (${serviceTitle}) a été validé avec succès.\n\nLa demande a été transmise au prestataire (${prestataireName}). Dès qu'il aura validé la demande, son numéro de téléphone apparaîtra ici pour que vous puissiez l'appeler.`,
           sender: 'admin',
           timestamp: new Date().toISOString(),
           isRead: false,
@@ -2740,38 +2742,76 @@ export const databaseService = {
   },
 
   subscribeToProviderServiceRequests: (providerPhone: string, callback: (requests: any[]) => void) => {
-    const sanitizedPhone = providerPhone.replace(/\D/g, '');
+    const raw = (providerPhone || '').replace(/\D/g, '');
+    if (!raw) {
+      callback([]);
+      return () => {};
+    }
+    const variants = [raw];
+    if (raw.startsWith('225') && raw.length > 3) {
+      variants.push(raw.slice(3));
+    } else if (!raw.startsWith('225') && raw.length === 10) {
+      variants.push('225' + raw);
+    }
+
     const q = query(
       collection(db, 'ServiceRequests'),
-      where('prestatairePhone', '==', sanitizedPhone),
-      where('status', '==', 'VALIDATED')
+      where('prestatairePhone', 'in', variants)
     );
     return onSnapshot(q, (snapshot) => {
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort in memory by timestamp descending
+      requests.sort((a: any, b: any) => {
+        const tA = a.timestamp?.toMillis ? a.timestamp.toMillis() : (typeof a.timestamp === 'number' ? a.timestamp : 0);
+        const tB = b.timestamp?.toMillis ? b.timestamp.toMillis() : (typeof b.timestamp === 'number' ? b.timestamp : 0);
+        return tB - tA;
+      });
       callback(requests);
     }, (error) => console.error("Error listening to provider service requests:", error));
   },
 
   subscribeToProviderServiceRequestsCount: (providerPhone: string, callback: (count: number) => void) => {
-    const sanitizedPhone = providerPhone.replace(/\D/g, '');
+    const raw = (providerPhone || '').replace(/\D/g, '');
+    if (!raw) {
+      callback(0);
+      return () => {};
+    }
+    const variants = [raw];
+    if (raw.startsWith('225') && raw.length > 3) {
+      variants.push(raw.slice(3));
+    } else if (!raw.startsWith('225') && raw.length === 10) {
+      variants.push('225' + raw);
+    }
+
     const q = query(
       collection(db, 'ServiceRequests'),
-      where('prestatairePhone', '==', sanitizedPhone),
-      where('status', '==', 'VALIDATED')
+      where('prestatairePhone', 'in', variants)
     );
     return onSnapshot(q, (snapshot) => {
-      const unreadCount = snapshot.docs.filter(doc => doc.data().isRead !== true).length;
+      const unreadCount = snapshot.docs.filter(doc => {
+        const d = doc.data();
+        const status = d.status || '';
+        const isPending = status === 'VALIDATED' || status === 'En attente' || status === 'PENDING_PROVIDER';
+        return isPending && d.isRead !== true;
+      }).length;
       callback(unreadCount);
     }, (error) => console.error("Error listening to provider service requests count:", error));
   },
 
   markServiceRequestsAsRead: async (providerPhone: string) => {
     try {
-      const sanitizedPhone = providerPhone.replace(/\D/g, '');
+      const raw = (providerPhone || '').replace(/\D/g, '');
+      if (!raw) return;
+      const variants = [raw];
+      if (raw.startsWith('225') && raw.length > 3) {
+        variants.push(raw.slice(3));
+      } else if (!raw.startsWith('225') && raw.length === 10) {
+        variants.push('225' + raw);
+      }
+
       const q = query(
         collection(db, 'ServiceRequests'),
-        where('prestatairePhone', '==', sanitizedPhone),
-        where('status', '==', 'VALIDATED')
+        where('prestatairePhone', 'in', variants)
       );
       const snapshot = await getDocs(q);
       const batch = writeBatch(db);
@@ -2793,23 +2833,35 @@ export const databaseService = {
 
   acceptServiceRequest: async (requestId: string, prestatairePhone: string, clientPhone: string) => {
     try {
+      await databaseService.ensureAuth();
       const reqRef = doc(db, 'ServiceRequests', requestId);
-      await setDoc(reqRef, { status: 'ACCEPTED' }, { merge: true });
+      await setDoc(reqRef, { 
+        status: 'ACCEPTED', 
+        acceptedAt: serverTimestamp(),
+        isRead: true 
+      }, { merge: true });
 
       // Format provider phone: +225 XX XX XX XX XX
-      const rawPhone = prestatairePhone.replace(/\D/g, '');
-      const formattedProviderPhone = rawPhone.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5');
+      const rawPhone = (prestatairePhone || '').replace(/\D/g, '');
+      const localPhone = rawPhone.startsWith('225') ? rawPhone.slice(3) : rawPhone;
+      const formattedProviderPhone = localPhone.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5');
+      const displayPhone = `+225 ${formattedProviderPhone}`;
+      const dialPhone = rawPhone.startsWith('225') ? `+${rawPhone}` : `+225${rawPhone}`;
       
-      const clientUserId = clientPhone.replace(/\D/g, '');
+      const clientUserId = (clientPhone || '').replace(/\D/g, '');
       const msg = {
-        text: `Votre demande de service a été acceptée par le prestataire.\nVous pouvez maintenant le contacter au :\n+225 ${formattedProviderPhone}`,
+        text: `✅ Bonne nouvelle ! Le prestataire a validé votre demande de service.\n\nVous pouvez maintenant le joindre directement au :\n📞 ${displayPhone}`,
         sender: 'admin',
         timestamp: new Date().toISOString(),
         isRead: false,
-        adminReadStatus: 'LU'
+        adminReadStatus: 'LU',
+        providerPhone: dialPhone,
+        serviceStatus: 'ACCEPTED'
       };
 
-      await databaseService.saveTypedChatMessage('Privee', clientUserId, msg);
+      if (clientUserId) {
+        await databaseService.saveTypedChatMessage('Privee', clientUserId, msg);
+      }
       return true;
     } catch (error) {
       console.error("Error accepting service request:", error);
@@ -2819,37 +2871,49 @@ export const databaseService = {
 
   refuseServiceRequest: async (requestId: string, prestatairePhone: string, clientPhone: string, amount: number, clientName: string, clientCity: string, paymentRtdbPath?: string) => {
     try {
+      await databaseService.ensureAuth();
       const reqRef = doc(db, 'ServiceRequests', requestId);
-      await setDoc(reqRef, { status: 'REFUSED' }, { merge: true });
+      await setDoc(reqRef, { 
+        status: 'REFUSED', 
+        refusedAt: serverTimestamp(),
+        isRead: true 
+      }, { merge: true });
 
-      const clientUserId = clientPhone.replace(/\D/g, '');
+      const clientUserId = (clientPhone || '').replace(/\D/g, '');
 
       // 1. Send automatic notification to client private messages
       const notificationMsg = {
-        text: `Désolé, votre demande de service a été refusée par le prestataire car celui-ci n'est pas disponible pour le moment.\n\nLe montant de ${amount} FCFA a été remboursé sur votre Portefeuille FILANT°225.`,
+        text: `❌ Demande non validée\n\nVotre demande de service n'a pas pu être validée par le prestataire (indisponible pour le moment).\n\n💰 Le montant de ${amount} FCFA a été automatiquement recrédité sur votre Portefeuille FILANT°225.`,
         sender: 'admin',
         timestamp: new Date().toISOString(),
         isRead: false,
-        adminReadStatus: 'LU'
+        adminReadStatus: 'LU',
+        serviceStatus: 'REFUSED'
       };
-      await databaseService.saveTypedChatMessage('Privee', clientUserId, notificationMsg);
+      if (clientUserId) {
+        await databaseService.saveTypedChatMessage('Privee', clientUserId, notificationMsg);
+      }
 
       // 2. Perform wallet refund
-      if (amount > 0) {
+      if (amount > 0 && clientUserId) {
         await databaseService.processWalletRefund(
           clientUserId,
           clientName || 'Utilisateur',
           clientCity || 'Non spécifiée',
           amount,
-          "Demande de service refusée par le prestataire"
+          "Demande de service refusée par le prestataire - Remboursement automatique"
         );
       }
 
       // 3. Update the RTDB transaction status if path is available
       if (paymentRtdbPath) {
-        await update(rtdbRef(rtdb, paymentRtdbPath), {
-          status: 'Service refusé / Paiement remboursé'
-        });
+        try {
+          await update(rtdbRef(rtdb, paymentRtdbPath), {
+            status: 'Service refusé / Paiement remboursé'
+          });
+        } catch (pathErr) {
+          console.warn("Could not update RTDB path directly:", pathErr);
+        }
       } else {
         // Fallback: lookup in RTDB Paiements to find this request and mark it
         try {

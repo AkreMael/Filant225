@@ -145,22 +145,38 @@ const ServicesRequestsScreen: React.FC<ServicesRequestsScreenProps> = ({ onBack,
                   </p>
                 </div>
                 
-                <div className="flex gap-2.5">
-                  <button 
-                    onClick={() => handleRefuse(req)} 
-                    className="p-3 bg-red-100 hover:bg-red-200 text-red-600 rounded-full shadow-md active:scale-90 transition-transform flex items-center justify-center border border-red-200"
-                    title="Refuser"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                  <button 
-                    onClick={() => handleAccept(req)} 
-                    className="p-3 bg-green-100 hover:bg-green-200 text-green-600 rounded-full shadow-md active:scale-90 transition-transform flex items-center justify-center border border-green-200"
-                    title="Accepter"
-                  >
-                    <Check className="w-5 h-5" />
-                  </button>
-                </div>
+                {req.status === 'ACCEPTED' ? (
+                  <div className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-2xl flex items-center gap-1.5 shadow-sm">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-black uppercase tracking-tight">Demande Validée</span>
+                  </div>
+                ) : req.status === 'REFUSED' ? (
+                  <div className="px-3.5 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-2xl flex items-center gap-1.5 shadow-sm">
+                    <X className="w-4 h-4 text-rose-600" />
+                    <span className="text-xs font-black uppercase tracking-tight">Refusée / Remboursée</span>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <button 
+                      id={`refuse_req_${req.id}`}
+                      onClick={() => handleRefuse(req)} 
+                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-1.5 border border-rose-200"
+                      title="Refuser la demande"
+                    >
+                      <X className="w-4 h-4" />
+                      <span className="text-xs font-black uppercase tracking-tight">Refuser</span>
+                    </button>
+                    <button 
+                      id={`accept_req_${req.id}`}
+                      onClick={() => handleAccept(req)} 
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 border border-emerald-600"
+                      title="Valider la demande"
+                    >
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span className="text-xs font-black uppercase tracking-tight">Valider</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))

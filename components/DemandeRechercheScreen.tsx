@@ -1214,7 +1214,7 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
         prestataireName: item.name,
         prestataireCity: item.city,
         prestataireActivity: item.titleOrActivity,
-        prestatairePhone: item.id.replace(/\D/g, ''),
+        prestatairePhone: (item.phone || item.prestatairePhone || item.id || '').replace(/\D/g, ''),
         status: 'En attente de paiement'
       };
 

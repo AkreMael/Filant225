@@ -1587,6 +1587,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
             <div className="flex justify-end items-end px-4 w-full">
             <div className="flex items-start gap-2.5 sm:gap-3 overflow-x-auto scrollbar-hide max-w-full py-1">
                 <button 
+                    onClick={() => onNavigate('services_requests')}
+                    className="flex flex-col items-center space-y-1 group relative shrink-0"
+                >
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-pink-600 hover:bg-pink-700 rounded-2xl shadow-lg transform group-hover:scale-110 transition-all duration-300 flex items-center justify-center text-white relative">
+                        <ShoppingBag className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+                        {pendingRequestsCount > 0 && (
+                            <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center px-1 bg-red-600 shadow-xl z-20">
+                                <span className="text-[9px] font-black text-white leading-none">{pendingRequestsCount}</span>
+                            </div>
+                        )}
+                    </div>
+                    <span className="text-[8px] font-black uppercase text-slate-600">Services</span>
+                </button>
+
+                <button 
                     onClick={() => setActiveTab(Tab.MyQRCode)}
                     className="flex flex-col items-center space-y-1 group shrink-0"
                 >
@@ -1668,23 +1683,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
             )}
 
             <div className="flex flex-col gap-4">
-                <div className="w-full flex justify-center items-center py-1 gap-3">
-                    {/* Services demandes button icon on the left */}
-                    <button
-                        onClick={() => {
-                            onNavigate('services_requests');
-                        }}
-                        className="relative p-3.5 bg-white border border-gray-200 text-pink-600 rounded-2xl shadow-sm hover:bg-gray-50 active:scale-95 transition-all flex items-center justify-center cursor-pointer shrink-0"
-                        title="Demandes de services"
-                    >
-                        <ShoppingBag className="w-5 h-5" />
-                        {pendingRequestsCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center animate-bounce shadow-md">
-                                {pendingRequestsCount}
-                            </span>
-                        )}
-                    </button>
-
+                <div className="w-full flex justify-center items-center py-1">
                     <button
                         onClick={() => {
                             setIsLoadingServices(true);

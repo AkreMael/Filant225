@@ -3,7 +3,7 @@ import { User } from '../types';
 import { databaseService } from '../services/databaseService';
 import { Linkify } from '../utils/textUtils';
 import SpeakerIcon from './common/SpeakerIcon';
-import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen } from 'lucide-react';
+import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone } from 'lucide-react';
 
 interface ChatMessage {
   id?: string;
@@ -12,6 +12,8 @@ interface ChatMessage {
   timestamp: number;
   paymentInfo?: { link: string; amount: string } | null;
   whatsAppPayload?: string;
+  providerPhone?: string;
+  serviceStatus?: string;
   isRead?: boolean;
   adminReadStatus?: 'LU' | 'NON LU' | 'VU';
 }
@@ -430,8 +432,22 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                         {content}
                       </div>
                       
-                      {!isAdmin && msg.sender === 'admin' && (msg.paymentInfo || msg.whatsAppPayload) && (
+                      {!isAdmin && msg.sender === 'admin' && (msg.paymentInfo || msg.whatsAppPayload || msg.providerPhone) && (
                         <div className="mt-4 pt-3.5 border-t border-[#00000010] dark:border-[#ffffff10] flex flex-col gap-2.5">
+                          {msg.providerPhone && (
+                            <a
+                              id={`call_btn_${messageId}`}
+                              href={`tel:${msg.providerPhone.replace(/\D/g, '').startsWith('225') ? '+' + msg.providerPhone.replace(/\D/g, '') : '+225' + msg.providerPhone.replace(/\D/g, '')}`}
+                              className="w-full bg-[#00a884] hover:bg-[#008f72] text-white font-black py-3 px-4 rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-[0.98] no-underline cursor-pointer"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Phone className="w-4 h-4 text-white fill-white" />
+                              <span className="uppercase tracking-wider text-[11px]">
+                                Appeler le prestataire
+                              </span>
+                            </a>
+                          )}
+
                           {msg.paymentInfo && (
                             <button 
                               id={`pay_btn_${messageId}`}
