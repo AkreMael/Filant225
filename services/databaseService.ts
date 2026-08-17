@@ -1235,6 +1235,53 @@ export const databaseService = {
     }
   },
 
+  subscribeToOnlineProfilesWithPhotos: (callback: (profiles: Array<{ id: string; name: string; photoUrl: string; profession?: string; profileType?: string }>) => void) => {
+    try {
+      const q = query(collection(db, 'Inscriptions'), limit(150));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const now = Date.now();
+        const onlineProfiles: Array<{ id: string; name: string; photoUrl: string; profession?: string; profileType?: string }> = [];
+
+        snapshot.docs.forEach((docSnap) => {
+          const item: any = docSnap.data();
+          const isOnline = item.isOnline === true || item.onlineApproved === true || item.status === 'Actif';
+          const isExpired = item.onlineEnd ? now > Number(item.onlineEnd) : false;
+          const isRefused = item.onlineRefused === true;
+
+          if (isOnline && !isExpired && !isRefused) {
+            const allPhotos: string[] = [
+              ...(Array.isArray(item.photos) ? item.photos : []),
+              ...(Array.isArray(item.onlineImages) ? item.onlineImages : []),
+              ...(Array.isArray(item.images) ? item.images : []),
+              item.profileImageUrl,
+              item.imageLink,
+              item.photoPiece,
+              item.selfiePhoto
+            ].filter((p: any) => typeof p === 'string' && p.trim().length > 5);
+
+            if (allPhotos.length > 0) {
+              onlineProfiles.push({
+                id: docSnap.id,
+                name: item.name || item.nomComplet || item.agencyName || item.companyName || 'Prestataire en ligne',
+                photoUrl: allPhotos[0],
+                profession: item.profession || item.metier || item.skillsDescription || item.profileType || 'Disponible',
+                profileType: item.profileType || 'Travailleur'
+              });
+            }
+          }
+        });
+
+        callback(onlineProfiles);
+      }, (err) => {
+        console.warn("Error in subscribeToOnlineProfilesWithPhotos:", err);
+      });
+      return unsubscribe;
+    } catch (e) {
+      console.error("Error setting up online profiles listener:", e);
+      return () => {};
+    }
+  },
+
   getUserInscription: async (phone: string) => {
     try {
       const sanitizedPhone = phone.replace(/\D/g, '');
