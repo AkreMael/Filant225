@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 
 const SLIDES = [
     {
@@ -31,7 +31,7 @@ const SLIDES = [
 export const MenuSlideshow: React.FC = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
 
-    // Preload all slide images into browser cache for instant lag-free crossfades
+    // Preload all slide images into browser cache for instant lag-free transitions
     useEffect(() => {
         SLIDES.forEach((slide) => {
             const img1 = new Image();
@@ -41,46 +41,47 @@ export const MenuSlideshow: React.FC = () => {
         });
     }, []);
 
-    // Automatic slideshow changing every 10 seconds (10000ms) without user interaction
+    // Automatic smooth slideshow without user interaction (every 5 seconds)
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentIndex((prev) => (prev + 1) % SLIDES.length);
-        }, 10000);
+        }, 5000);
 
         return () => clearInterval(timer);
     }, []);
+
+    const currentSlide = SLIDES[currentIndex];
 
     return (
         <div className="mt-3 w-full relative overflow-hidden select-none pointer-events-none">
             {/* Aspect ratio container locks height to exact image proportions (1250x450), avoiding any height shift or layout jitter */}
             <div className="w-full relative aspect-[1250/450] max-h-[380px] overflow-hidden">
-                {SLIDES.map((slide, idx) => {
-                    const isActive = idx === currentIndex;
-                    return (
-                        <motion.img
-                            key={slide.id}
-                            src={slide.src}
+                <AnimatePresence initial={false} mode="sync">
+                    <motion.div
+                        key={currentSlide.id}
+                        initial={{ x: '100%' }}
+                        animate={{ x: '0%' }}
+                        exit={{ x: '-100%' }}
+                        transition={{
+                            duration: 0.85,
+                            ease: [0.25, 0.1, 0.25, 1.0]
+                        }}
+                        className="absolute inset-0 w-full h-full"
+                    >
+                        <img
+                            src={currentSlide.src}
                             onError={(e) => {
                                 const target = e.target as HTMLImageElement;
-                                if (target.src !== slide.fallback) {
-                                    target.src = slide.fallback;
+                                if (target.src !== currentSlide.fallback) {
+                                    target.src = currentSlide.fallback;
                                 }
                             }}
-                            alt={slide.alt}
-                            initial={false}
-                            animate={{
-                                opacity: isActive ? 1 : 0,
-                                zIndex: isActive ? 10 : 1
-                            }}
-                            transition={{
-                                duration: 0.5,
-                                ease: "easeInOut"
-                            }}
-                            className="absolute inset-0 w-full h-full object-contain pointer-events-none block"
+                            alt={currentSlide.alt}
+                            className="w-full h-full object-contain pointer-events-none block"
                             referrerPolicy="no-referrer"
                         />
-                    );
-                })}
+                    </motion.div>
+                </AnimatePresence>
             </div>
         </div>
     );
