@@ -997,6 +997,7 @@ interface HomeScreenProps {
   onTriggerClosedNotification?: () => void;
   unreadChatCount?: number;
   unreadNotifCount?: number;
+  pendingRequestsCount?: number;
   deferredPrompt: any;
   onInstallPWA: () => void;
   onToggleProfile?: () => void;
@@ -1013,6 +1014,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   onRegisterDirectly, 
   unreadChatCount = 0,
   unreadNotifCount = 0,
+  pendingRequestsCount = 0,
   deferredPrompt,
   onInstallPWA,
   onToggleProfile
@@ -1037,7 +1039,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const [profileType, setProfileType] = useState<'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise' | 'Client'>('Client');
   const [isLoadingServices, setIsLoadingServices] = useState(false);
-  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [localPendingRequestsCount, setLocalPendingRequestsCount] = useState(pendingRequestsCount);
+
+  useEffect(() => {
+    setLocalPendingRequestsCount(pendingRequestsCount);
+  }, [pendingRequestsCount]);
+
+  const activePendingRequestsCount = Math.max(localPendingRequestsCount, pendingRequestsCount);
 
   const [profileImage, setProfileImage] = useState<string | null>(() => {
     if (!user?.phone) return null;
@@ -1092,7 +1100,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     if (!user?.phone) return;
     const prestatairePhone = user.phone.replace(/\D/g, '');
     const unsubscribe = databaseService.subscribeToProviderServiceRequestsCount(prestatairePhone, (count) => {
-      setPendingRequestsCount(count);
+      setLocalPendingRequestsCount(count);
     });
     return () => unsubscribe();
   }, [user?.phone]);
@@ -1587,18 +1595,21 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
             <div className="flex justify-end items-end px-4 w-full">
             <div className="flex items-start gap-2.5 sm:gap-3 overflow-x-auto scrollbar-hide max-w-full py-1">
                 <button 
+                    id="services_header_button"
                     onClick={() => onNavigate('services_requests')}
                     className="flex flex-col items-center space-y-1 group relative shrink-0"
                 >
-                    <div className="w-12 h-12 sm:w-14 sm:h-14 bg-pink-600 hover:bg-pink-700 rounded-2xl shadow-lg transform group-hover:scale-110 transition-all duration-300 flex items-center justify-center text-white relative">
+                    <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-lg transform group-hover:scale-110 relative overflow-hidden ${
+                        activePendingRequestsCount > 0 ? 'animate-blink-red-green' : 'bg-pink-600 hover:bg-pink-700'
+                    }`}>
                         <ShoppingBag className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
-                        {pendingRequestsCount > 0 && (
-                            <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center px-1 bg-red-600 shadow-xl z-20">
-                                <span className="text-[9px] font-black text-white leading-none">{pendingRequestsCount}</span>
-                            </div>
-                        )}
                     </div>
                     <span className="text-[8px] font-black uppercase text-slate-600">Services</span>
+                    {activePendingRequestsCount > 0 && (
+                        <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full border-2 border-white flex items-center justify-center px-1 bg-red-600 shadow-xl z-20">
+                            <span className="text-[9px] font-black text-white leading-none">{activePendingRequestsCount}</span>
+                        </div>
+                    )}
                 </button>
 
                 <button 

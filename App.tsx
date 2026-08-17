@@ -1669,6 +1669,7 @@ const App: React.FC = () => {
             onShowPopup={showPopup}
             unreadChatCount={unreadChatCount}
             unreadNotifCount={unreadNotifCount}
+            pendingRequestsCount={pendingRequestsCount}
             deferredPrompt={deferredPrompt}
             onInstallPWA={handleInstallPWA}
             onToggleProfile={handleToggleProfile}
@@ -2063,12 +2064,14 @@ const App: React.FC = () => {
               onClick={() => {
                 setBlockedView('messagerie');
               }}
-              className="relative w-full py-4 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className={`relative w-full py-4 ${
+                unreadChatCount > 0 ? 'animate-blink-red-green' : 'bg-blue-600 hover:bg-blue-700'
+              } active:scale-95 text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer`}
             >
               <MessageSquare size={16} />
               MESSAGERIE
               {unreadChatCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black w-5.5 h-5.5 rounded-full flex items-center justify-center animate-bounce shadow-md border-2 border-white z-10">
+                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-md border-2 border-white z-10">
                   {unreadChatCount}
                 </span>
               )}
@@ -2086,11 +2089,6 @@ const App: React.FC = () => {
                 Services en ligne
               </span>
               <Eye className="w-6 h-6 text-white animate-eye-blink shrink-0" />
-              {pendingRequestsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-600 text-white text-[10px] font-black w-5.5 h-5.5 rounded-full flex items-center justify-center animate-bounce shadow-md border-2 border-white z-10">
-                  {pendingRequestsCount}
-                </span>
-              )}
             </button>
 
             {/* Beautiful inline navigation bar directly integrated under the MESSAGERIE and Services en ligne buttons */}
@@ -2128,10 +2126,12 @@ const App: React.FC = () => {
                   onClick={() => setBlockedView('services')}
                   className="flex flex-col items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 flex-1 cursor-pointer"
                 >
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center bg-pink-600 hover:bg-pink-700 transition-all duration-300 shadow-lg mb-1 relative overflow-visible">
+                  <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg mb-1 relative overflow-hidden ${
+                    pendingRequestsCount > 0 ? 'animate-blink-red-green' : 'bg-pink-600 hover:bg-pink-700'
+                  }`}>
                     <ShoppingBagIcon className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
                     {pendingRequestsCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center animate-bounce shadow-md border border-white z-10">
+                      <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md border border-white z-10">
                         {pendingRequestsCount}
                       </span>
                     )}

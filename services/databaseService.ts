@@ -2800,6 +2800,7 @@ export const databaseService = {
 
   markServiceRequestsAsRead: async (providerPhone: string) => {
     try {
+      await databaseService.ensureAuth();
       const raw = (providerPhone || '').replace(/\D/g, '');
       if (!raw) return;
       const variants = [raw];
@@ -2814,6 +2815,8 @@ export const databaseService = {
         where('prestatairePhone', 'in', variants)
       );
       const snapshot = await getDocs(q);
+      if (snapshot.empty) return;
+
       const batch = writeBatch(db);
       let updatedCount = 0;
       snapshot.docs.forEach((docSnap) => {
@@ -3341,6 +3344,7 @@ export const databaseService = {
 
   markTypedMessagesAsRead: async (type: 'Assistant' | 'Privee', chatUserId: string, side: 'user' | 'admin') => {
     try {
+      await databaseService.ensureAuth();
       const userId = chatUserId.replace(/\D/g, '');
       const collectionName = `Messagerie${type}`;
       const q = query(
@@ -3349,6 +3353,8 @@ export const databaseService = {
         where(side === 'user' ? 'adminReadStatus' : 'isRead', '==', side === 'user' ? 'NON LU' : false)
       );
       const snapshot = await getDocs(q);
+      if (snapshot.empty) return;
+
       const batch = writeBatch(db);
       
       snapshot.docs.forEach(d => {
@@ -3359,11 +3365,13 @@ export const databaseService = {
           updateData.isRead = true;
         }
         
-        // Update subcollection docs
+        // Update subcollection doc
         batch.update(d.ref, updateData);
         
-        // Update global collection docs
-        batch.update(doc(db, collectionName, d.id), updateData);
+        // For user messages, also update global collection doc if it exists using set merge
+        if (side === 'user') {
+          batch.set(doc(db, collectionName, d.id), updateData, { merge: true });
+        }
       });
       
       await batch.commit();
