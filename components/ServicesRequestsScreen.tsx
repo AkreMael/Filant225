@@ -139,7 +139,7 @@ const ServicesRequestsScreen: React.FC<ServicesRequestsScreenProps> = ({ onBack,
 
               <div className="flex items-center justify-between mt-1 pt-3 border-t border-gray-50">
                 <div className="flex flex-col">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Montant Service</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Frais de la demande</p>
                   <p className="text-pink-600 font-black text-sm tracking-tight">
                     {parseFloat(req.totalPrice || '0').toLocaleString('fr-FR')} FCFA
                   </p>
