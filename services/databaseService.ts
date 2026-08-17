@@ -877,7 +877,7 @@ export const databaseService = {
       }
 
       const onlineStart = Date.now();
-      const onlineEnd = onlineStart + (365 * 24 * 3600 * 1000); // 1 year publication
+      const onlineEnd = onlineStart + (30 * 24 * 3600 * 1000); // 1 month publication
 
       const updatedFields = {
         isOnline: true,
@@ -1017,7 +1017,7 @@ export const databaseService = {
 
         const hasSufficientBalance = balance >= 310;
         const onlineStart = Date.now();
-        const onlineEnd = onlineStart + (365 * 24 * 3600 * 1000); // 1 year publication
+        const onlineEnd = onlineStart + (30 * 24 * 3600 * 1000); // 1 month publication
 
         const fullPayload = {
           ...inscriptionData,
@@ -2435,9 +2435,22 @@ export const databaseService = {
             }
           }
 
-          if (payment.paymentType === 'Inscription' || payment.amount === '310' || payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne')) {
+          const isOnlineRenewal = payment.paymentType === 'Renouvellement de profil' || 
+            payment.paymentType === 'Renouvellement mise en ligne' ||
+            payment.amount === '210' || 
+            payment.title?.toLowerCase().includes('renouveler') || 
+            payment.title?.toLowerCase().includes('renouvellement');
+
+          const isInscription = payment.paymentType === 'Inscription' || payment.amount === '310';
+          const isQrActivation = payment.paymentType === 'Activation' || payment.amount === '7100';
+
+          if (isOnlineRenewal) {
+            await databaseService.renewOnlineProfile(userId);
+          } else if (isInscription) {
             await databaseService.activateAndPublishProfile(userId);
-          } else if (payment.paymentType === 'Activation' || payment.amount === '7100') {
+          } else if (payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne')) {
+            await databaseService.activateAndPublishProfile(userId);
+          } else if (isQrActivation) {
             const now = new Date();
             const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
             
@@ -2453,10 +2466,15 @@ export const databaseService = {
 
         // Send automatic message to user
         if (userId) {
-          const isInscriptionOrOnline = payment.paymentType === 'Inscription' || payment.amount === '310' || payment.paymentType === 'Mise en ligne' || payment.title?.includes('Mise en ligne');
-          const successMsg = isInscriptionOrOnline
-            ? `✅ Félicitations ! Votre inscription et paiement de 310 FCFA ont été validés avec succès par l'administrateur. Votre profil professionnel avec vos photos est désormais automatiquement publié et en ligne dans "Services en ligne" !`
-            : `✅ Votre paiement de ${payment.amount} FCFA (${payment.title || payment.paymentType}) a été validé avec succès par l'administrateur. L'étape suivante est maintenant débloquée.`;
+          let successMsg = `✅ Votre paiement de ${payment.amount} FCFA (${payment.title || payment.paymentType}) a été validé avec succès par l'administrateur. L'étape suivante est maintenant débloquée.`;
+
+          if (payment.paymentType === 'Renouvellement de profil' || payment.paymentType === 'Renouvellement mise en ligne' || payment.amount === '210' || payment.title?.toLowerCase().includes('renouvel')) {
+            successMsg = `✅ Félicitations ! Votre renouvellement de mise en ligne (210 FCFA) a été validé avec succès par l'administrateur. Votre profil est réactivé et reste visible en ligne pour 1 mois supplémentaire !`;
+          } else if (payment.paymentType === 'Inscription' || payment.amount === '310') {
+            successMsg = `✅ Félicitations ! Votre inscription et paiement de 310 FCFA ont été validés avec succès par l'administrateur. Votre profil professionnel avec vos photos est désormais automatiquement publié et en ligne pour 1 mois dans "Services en ligne" !`;
+          } else if (payment.paymentType === 'Activation' || payment.amount === '7100') {
+            successMsg = `✅ Félicitations ! Le paiement de votre carte professionnelle / QR (7 100 FCFA) a été validé avec succès. Votre code QR est maintenant activé !`;
+          }
 
           const msg = {
             text: successMsg,

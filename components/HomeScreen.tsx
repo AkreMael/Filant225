@@ -1191,11 +1191,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     const unsubInsc = onSnapshot(inscDocRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        setInscriptionData(data);
         setLiveUser(prev => ({
           ...prev,
           name: data.name || data.nom || prev.name,
           city: data.city || data.ville || prev.city,
         }));
+      } else {
+        setInscriptionData(null);
       }
     }, (err) => {
       console.warn("Error listening to Inscriptions doc in HomeScreen:", err);
@@ -1207,6 +1210,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     };
   }, [user?.phone]);
 
+  const [inscriptionData, setInscriptionData] = useState<any>(null);
+
   const [isInscriptionValidated, setIsInscriptionValidated] = useState<boolean>(() => {
     return localStorage.getItem(`filant_inscription_validated_${user?.phone || ''}`) === 'true';
   });
@@ -1216,6 +1221,52 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   });
 
   const [isQrExpired, setIsQrExpired] = useState<boolean>(false);
+
+  // Online profile expiration and status calculations (1 month = 30 days)
+  const now = Date.now();
+  const hasInscription = !!inscriptionData && (!!inscriptionData.profileType || !!inscriptionData.submittedAt || hasSubmittedForm);
+  const isValidatedStatus = inscriptionData?.status === 'Actif' || 
+    inscriptionData?.registrationStatus === 'validated' || 
+    inscriptionData?.isActivated === true ||
+    isInscriptionValidated;
+
+  const onlineEnd = inscriptionData?.onlineEnd;
+  const isOnlineExpired = hasInscription && (
+    (onlineEnd ? now > onlineEnd : false) ||
+    (isValidatedStatus && inscriptionData?.isOnline === false)
+  );
+
+  const isProfileOnline = hasInscription && 
+    !isOnlineExpired && 
+    (inscriptionData?.isOnline === true || inscriptionData?.onlineApproved === true || (isValidatedStatus && !isOnlineExpired));
+
+  const isProfilePending = hasInscription && !isProfileOnline && !isOnlineExpired && (
+    inscriptionData?.onlinePending === true || 
+    inscriptionData?.registrationStatus === 'pending' || 
+    hasSubmittedForm
+  );
+
+  const handleRenewOnline = () => {
+    if (!user?.phone) return;
+    const sanitizedPhone = user.phone.replace(/\D/g, '');
+    window.dispatchEvent(new CustomEvent('trigger-payment-view', {
+      detail: {
+        title: "Renouveler votre mise en ligne – 210 FCFA",
+        amount: "210",
+        paymentType: "Mise en ligne",
+        waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210",
+        serviceRequestId: `renew_${sanitizedPhone}_${Date.now()}`,
+        onSuccess: async () => {
+          await databaseService.renewOnlineProfile(user.phone);
+          if (onShowPopup) {
+            onShowPopup("Félicitations ! Votre mise en ligne a été renouvelée avec succès pour 1 mois.", "alert");
+          } else {
+            alert("Félicitations ! Votre mise en ligne a été renouvelée avec succès pour 1 mois.");
+          }
+        }
+      }
+    }));
+  };
 
   useEffect(() => {
     if (!user?.phone) return;
@@ -1425,8 +1476,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                              </span>
                              <div className="flex items-center gap-1 text-[9px] font-medium text-slate-400 dark:text-slate-400">
                                  <span>{getStatusLabel(profileType)}</span>
-                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                                 <span className="text-emerald-500 dark:text-emerald-400 font-semibold">en ligne</span>
+                                 <span className={`inline-block w-1.5 h-1.5 rounded-full ${isProfileOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'} shrink-0`}></span>
+                                 <span className={`${isProfileOnline ? 'text-emerald-500 dark:text-emerald-400 font-semibold' : 'text-slate-400 font-medium'}`}>
+                                     {isProfileOnline ? 'en ligne' : 'hors ligne'}
+                                 </span>
                              </div>
                          </div>
                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:translate-x-0.5 transition-transform ml-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -1453,9 +1506,17 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                 </div>
             </div>
 
-            {/* Grand bouton INSCRIVEZ VOTRE DOMAINE / FINALISER L'INSCRIPTION / INSCRIPTION VALIDÉE sous la section Profil */}
+            {/* Grand bouton INSCRIVEZ VOTRE DOMAINE / FINALISER L'INSCRIPTION / INSCRIPTION VALIDÉE / RENOUVELER VOTRE MISE EN LIGNE sous la section Profil */}
             <div className="px-4 mt-2 mb-1">
-                {isInscriptionValidated ? (
+                {isOnlineExpired ? (
+                    <button 
+                        onClick={handleRenewOnline}
+                        className="w-full py-3 px-4 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:to-amber-600 active:scale-[0.98] transition-all duration-200 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2.5 cursor-pointer border border-orange-400/30 group animate-pulse"
+                    >
+                        <RefreshCw className="w-5 h-5 text-white shrink-0 group-hover:rotate-180 transition-transform duration-500" />
+                        <span>Renouveler votre mise en ligne – 210 FCFA</span>
+                    </button>
+                ) : isProfileOnline ? (
                     <button 
                         onClick={() => setActiveTab(Tab.MyQRCode)}
                         className="w-full py-2.5 px-4 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all"
@@ -1465,15 +1526,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                         </div>
                         <span className="text-emerald-600 dark:text-emerald-400 font-black">INSCRIPTION VALIDÉE</span>
                     </button>
-                ) : isQrExpired ? (
-                    <button 
-                        onClick={() => setActiveTab(Tab.MyQRCode)}
-                        className="w-full py-3 px-4 bg-gradient-to-r from-red-500 via-orange-600 to-amber-600 hover:from-red-600 hover:to-orange-700 active:scale-[0.98] transition-all duration-200 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2.5 cursor-pointer border border-orange-400/30 group animate-pulse"
-                    >
-                        <RefreshCw className="w-5 h-5 text-white shrink-0 group-hover:rotate-180 transition-transform duration-500" />
-                        <span>RENOUVELER VOTRE QR CODE - 500 FCFA</span>
-                    </button>
-                ) : hasSubmittedForm ? (
+                ) : isProfilePending ? (
                     <button 
                         onClick={() => setActiveTab(Tab.MyQRCode)}
                         className="w-full py-3 px-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 active:scale-[0.98] transition-all duration-200 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-md shadow-amber-500/20 flex items-center justify-center gap-2.5 cursor-pointer border border-amber-400/30 group"

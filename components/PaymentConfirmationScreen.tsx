@@ -431,8 +431,20 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps> = ({
       }
 
       // 3. Write validated payment log into RTDB / Admin overview
-      const isMiseEnLigne = paymentType === 'Mise en ligne';
-      if (isMiseEnLigne) {
+      const isOnlineRenewal = paymentType === 'Renouvellement de profil' || 
+        paymentType === 'Renouvellement mise en ligne' || 
+        currentAmount === '210' || 
+        title?.toLowerCase().includes('renouveler') ||
+        title?.toLowerCase().includes('renouvellement');
+
+      const isMiseEnLigne = paymentType === 'Mise en ligne' || isOnlineRenewal;
+      if (isOnlineRenewal) {
+        try {
+          await databaseService.renewOnlineProfile(user.phone);
+        } catch (activeErr) {
+          console.error("Error renewing online profile on wallet deduct:", activeErr);
+        }
+      } else if (isMiseEnLigne) {
         try {
           const durationType = (title?.toLowerCase().includes('mois') || title?.toLowerCase().includes('350') || currentAmount === '350') ? '1_month' : '1_week';
           const numAmt = parseFloat(currentAmount) || 0;
@@ -467,10 +479,15 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps> = ({
           }
         }
         try {
+          let successText = `✅ Votre paiement de ${currentAmount} FCFA (${title || paymentType}) a été validé avec succès. L'étape suivante est maintenant débloquée.`;
+          if (isOnlineRenewal) {
+            successText = `✅ Félicitations ! Votre paiement de 210 FCFA pour le renouvellement de mise en ligne a été validé automatiquement. Votre profil est réactivé et en ligne pour 1 mois supplémentaire !`;
+          } else if (isMiseEnLigne) {
+            successText = `✅ Votre paiement de ${currentAmount} FCFA pour la mise en ligne d'annonce a été débité et validé automatiquement par votre portefeuille. Votre annonce est désormais active et immédiatement en ligne !`;
+          }
+
           const autoMsg = {
-            text: isMiseEnLigne 
-              ? `✅ Votre paiement de ${currentAmount} FCFA pour la mise en ligne d'annonce a été débité et validé automatiquement par votre portefeuille. Votre annonce est désormais active et immédiatement en ligne !`
-              : `✅ Votre paiement de ${currentAmount} FCFA (${title || paymentType}) a été validé avec succès. L'étape suivante est maintenant débloquée.`,
+            text: successText,
             sender: 'admin',
             timestamp: new Date().toISOString(),
             isRead: false,
