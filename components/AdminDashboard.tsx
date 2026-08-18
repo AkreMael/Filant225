@@ -35,12 +35,9 @@ import {
   Plus,
   Minus,
   Check,
-  Pencil,
-  MapPin,
-  Navigation
+  Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import GoogleLiveTrackingMap from './GoogleLiveTrackingMap';
 
 const WhatsAppIcon = ({ size = 18 }: { size?: number }) => (
   <svg 
@@ -64,7 +61,6 @@ interface AdminDashboardProps {
 
 type AdminTab = 
   | 'overview' 
-  | 'tracking'
   | 'connections' 
   | 'inscriptions'
   | 'qrcodes'
@@ -179,7 +175,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   const [notifHasButton, setNotifHasButton] = useState(false);
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
   const [sendingCustomNotif, setSendingCustomNotif] = useState(false);
-  const [selectedTrackingWorker, setSelectedTrackingWorker] = useState<any | null>(null);
   const [notifButtonRecherche, setNotifButtonRecherche] = useState(false);
   const [notifButtonSimpleDemande, setNotifButtonSimpleDemande] = useState(false);
   const [notifButtonQrCode, setNotifButtonQrCode] = useState(false);
@@ -210,8 +205,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     allUsers: [], // Unified user profile store
     disponible: [],
     equipements_dispo: [],
-    appartements_dispo: [],
-    trackedWorkers: []
+    appartements_dispo: []
   });
 
   useEffect(() => {
@@ -299,29 +293,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       setData(prev => ({ ...prev, appartements_dispo: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) }));
     });
 
-    // 7. Suivi GPS Travailleurs en direct (Google Maps / Firebase)
-    const unsubWorkerLocations = onSnapshot(collection(db, 'WorkerLocations'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setData(prev => ({ ...prev, trackedWorkers: list }));
-    });
-
     setLoading(false);
 
     return () => {
       unsubConns();
       unsubInscriptions();
-      unsubQRCodes();
       unsubPrivate();
       unsubScans();
       unsubPayments();
       unsubRequests();
       unsubMissions();
+      unsubQRCodes();
       unsubWallets();
       unsubWalletTxs();
       unsubDisponible();
       unsubEquipementsDispo();
       unsubAppartementsDispo();
-      unsubWorkerLocations();
     };
   }, []);
 
@@ -514,201 +501,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       id,
       collectionName: targetCol
     });
-  };
-
-  const renderTrackingTab = () => {
-    const activeBroadcasts = data.trackedWorkers || [];
-    // Merge with registered workers if available
-    const registeredWorkers = data.inscriptions.filter(i => i.profileType === 'travailleur' || i.job || i.speciality);
-    
-    // Combine tracked workers
-    const allWorkersList = [...activeBroadcasts];
-    registeredWorkers.forEach(reg => {
-      const regId = (reg.id || reg.phone || '').replace(/\D/g, '');
-      if (!allWorkersList.some(w => (w.id || w.phone || '').replace(/\D/g, '') === regId)) {
-        allWorkersList.push({
-          id: reg.id || reg.phone,
-          name: reg.name || 'Travailleur',
-          phone: reg.phone,
-          city: reg.city || 'Abidjan',
-          category: reg.titleOrActivity || reg.job || 'Professionnel',
-          isLiveTracking: false,
-          latitude: reg.latitude || 5.359952,
-          longitude: reg.longitude || -4.008256,
-          lastUpdated: reg.timestamp ? (reg.timestamp.toDate ? reg.timestamp.toDate().getTime() : Date.now()) : Date.now()
-        });
-      }
-    });
-
-    const activeLiveCount = activeBroadcasts.filter(w => w.isLiveTracking && (Date.now() - (w.lastUpdated || 0) < 300000)).length;
-    const selected = selectedTrackingWorker || (allWorkersList.length > 0 ? allWorkersList[0] : null);
-
-    return (
-      <div className="space-y-6 animate-in fade-in duration-300">
-        {/* Header summary banner */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 shadow-xl border border-indigo-900/40 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
-              <Navigation className="w-6 h-6 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-black uppercase tracking-wider text-white">Suivi GPS & Navigation en Direct</h2>
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  Google Cloud Platform • Actif
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 font-bold mt-0.5">
-                Localisation en temps réel, Navigation SDK et validation des adresses synchronisées avec Firebase
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="px-4 py-2 bg-white/10 rounded-2xl border border-white/10 text-center">
-              <span className="text-[9px] font-black text-slate-300 uppercase block tracking-widest">En direct</span>
-              <span className="text-xl font-black text-emerald-400">{activeLiveCount}</span>
-            </div>
-            <div className="px-4 py-2 bg-white/10 rounded-2xl border border-white/10 text-center">
-              <span className="text-[9px] font-black text-slate-300 uppercase block tracking-widest">Total Enregistrés</span>
-              <span className="text-xl font-black text-white">{allWorkersList.length}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* 2-Columns grid: Left worker list + Right Interactive Live Map */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Worker selection list (4 cols) */}
-          <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-800 p-5 flex flex-col h-[600px]">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800 mb-3">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                <HardHat className="w-4 h-4 text-orange-500" />
-                Liste des Travailleurs ({allWorkersList.length})
-              </h3>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-hide">
-              {allWorkersList.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
-                  <HardHat size={32} className="mb-2 opacity-40" />
-                  <p className="text-xs font-bold uppercase">Aucun travailleur répertorié</p>
-                </div>
-              ) : (
-                allWorkersList.map((worker, idx) => {
-                  const isSelected = selected && (selected.id === worker.id || selected.phone === worker.phone);
-                  const isLive = worker.isLiveTracking && (Date.now() - (worker.lastUpdated || 0) < 300000);
-                  
-                  return (
-                    <div
-                      key={worker.id || idx}
-                      onClick={() => setSelectedTrackingWorker(worker)}
-                      className={`p-3.5 rounded-2xl cursor-pointer transition-all border ${
-                        isSelected
-                          ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-500 shadow-md ring-1 ring-indigo-500/30'
-                          : 'bg-gray-50/60 dark:bg-slate-800/40 border-gray-100 dark:border-slate-800 hover:border-indigo-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="relative shrink-0">
-                            <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-slate-700 text-orange-600 flex items-center justify-center font-black text-sm">
-                              {worker.name ? worker.name.charAt(0).toUpperCase() : 'T'}
-                            </div>
-                            {isLive && (
-                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full animate-ping" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-slate-900 dark:text-white uppercase truncate">
-                              {worker.name || 'Travailleur'}
-                            </p>
-                            <p className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase truncate">
-                              {worker.category || worker.job || 'Professionnel'} • {worker.city || 'Côte d\'Ivoire'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className={`px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase ${
-                            isLive 
-                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300'
-                              : 'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-gray-400'
-                          }`}>
-                            {isLive ? 'EN DIRECT' : 'REPOS'}
-                          </span>
-                          {worker.phone && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleWhatsAppClick(worker.phone, e)}
-                              className="p-1 bg-green-500/10 hover:bg-green-500 hover:text-white text-green-600 rounded-md transition-all active:scale-90"
-                              title="Contacter sur WhatsApp"
-                            >
-                              <WhatsAppIcon size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Interactive Google Live Map (8 cols) */}
-          <div className="lg:col-span-8 bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col h-[600px]">
-            {selected ? (
-              <div className="h-full flex flex-col">
-                <div className="p-4 bg-gray-50/80 dark:bg-slate-800/80 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
-                    <div>
-                      <h4 className="text-xs font-black uppercase text-slate-900 dark:text-white tracking-wider">
-                        {selected.name || 'Travailleur'} — Suivi satellite
-                      </h4>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase">
-                        {selected.city || 'Côte d\'Ivoire'} • Tél: +225 {selected.phone || 'Non renseigné'}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  {selected.phone && (
-                    <button
-                      onClick={(e) => handleWhatsAppClick(selected.phone, e)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-[10px] uppercase shadow-md active:scale-95 transition-all"
-                    >
-                      <WhatsAppIcon size={12} />
-                      <span>WhatsApp</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex-1 relative overflow-hidden">
-                  <GoogleLiveTrackingMap 
-                    workerId={selected.id || selected.phone}
-                    providerLat={selected.latitude || 5.359952}
-                    providerLng={selected.longitude || -4.008256}
-                    providerName={selected.name}
-                    providerCity={selected.city}
-                    providerPhone={selected.phone}
-                    providerCategory={selected.category || selected.job}
-                    providerAvatar={selected.imageLink || selected.photoUrl}
-                    userLat={5.359952}
-                    userLng={-4.008256}
-                    userName="Siège FILANT°225"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-gray-400">
-                <MapPin size={48} className="mb-3 opacity-30 text-indigo-500" />
-                <p className="text-sm font-bold uppercase">Sélectionnez un travailleur pour afficher sa localisation en direct</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
   };
 
   const renderDisponibleTab = () => {
@@ -1441,7 +1233,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
 
   const menuItems: { id: AdminTab, label: string, icon: any }[] = [
     { id: 'overview', label: 'Vue d\'ensemble', icon: LayoutDashboard },
-    { id: 'tracking', label: 'Suivi GPS Travailleurs', icon: Navigation },
     { id: 'connections', label: 'Connexions', icon: BarChart3 },
     { id: 'inscriptions', label: 'Inscriptions', icon: Briefcase },
     { id: 'wallets', label: 'Compte des utilisateurs', icon: Users },
@@ -2968,8 +2759,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                   </div>
                 </div>
               )}
-
-              {activeTab === 'tracking' && renderTrackingTab()}
 
               {activeTab === 'disponible' && renderDisponibleTab()}
             </>
