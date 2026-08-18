@@ -340,9 +340,29 @@ const App: React.FC = () => {
 
   // RAW states (do not push to history when set directly during popping/restoring)
   const [showSmartRegistrationRaw, setShowSmartRegistrationRaw] = useState(false);
-  const [activeTabRaw, setActiveTabRaw] = useState<Tab>(Tab.Menu);
+  const [activeTabRaw, setActiveTabRaw] = useState<Tab>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'userChat' || tabParam === 'chat' || tabParam === 'messages') {
+        return Tab.UserChat;
+      }
+      if (tabParam === 'admin') {
+        return Tab.Admin;
+      }
+    }
+    return Tab.Menu;
+  });
   const [showFullRegistrationRaw, setShowFullRegistrationRaw] = useState(false);
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'admin' && params.get('chatUserId')) {
+        return true;
+      }
+    }
+    return false;
+  });
   const [adminForceAppView, setAdminForceAppView] = useState(false);
   const [menuViewRaw, setMenuViewRaw] = useState<'hub' | 'worker_list' | 'notifications' | 'emergency_form' | 'assistant_qr' | 'services_requests' | 'admin_dashboard' | 'location_hub' | 'location_map' | 'stage_formation_hub' | 'demande_recherche'>(() => {
     if (typeof window !== 'undefined') {
@@ -350,10 +370,26 @@ const App: React.FC = () => {
       if (params.get('adId')) {
         return 'demande_recherche';
       }
+      if (params.get('tab') === 'notifications') {
+        return 'notifications';
+      }
     }
     return 'hub';
   });
-  const [adminChatContextRaw, setAdminChatContextRaw] = useState<{ userId: string, userName: string, type: 'Privee' } | null>(null);
+  const [adminChatContextRaw, setAdminChatContextRaw] = useState<{ userId: string, userName: string, type: 'Privee' } | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const chatUserId = params.get('chatUserId');
+      if (params.get('tab') === 'admin' && chatUserId) {
+        return {
+          userId: chatUserId,
+          userName: params.get('userName') || 'Utilisateur',
+          type: 'Privee'
+        };
+      }
+    }
+    return null;
+  });
   const [offerSubViewRaw, setOfferSubViewRaw] = useState<'main' | 'shop' | 'info_travailleurs' | 'info_clients'>('main');
   const [isProfileOpenRaw, setIsProfileOpenRaw] = useState(false);
   const [showScannerGlobalRaw, setShowScannerGlobalRaw] = useState(false);
@@ -958,6 +994,46 @@ const App: React.FC = () => {
       messagingService.onMessageListener(currentUser.phone);
     }
   }, [currentUser]);
+
+  // Listener for Push Notification click redirections (from Service Worker and CustomEvents)
+  useEffect(() => {
+    const handleSWMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_CLICK') {
+        const notifData = event.data.data;
+        if (notifData?.chatUserId || notifData?.targetTab === 'userChat' || notifData?.type === 'chat_message' || notifData?.type === 'platform_notification') {
+          setActiveTab(Tab.UserChat);
+        } else if (notifData?.url && notifData.url.includes('tab=userChat')) {
+          setActiveTab(Tab.UserChat);
+        } else if (notifData?.url && notifData.url.includes('tab=notifications')) {
+          setActiveTab(Tab.Menu);
+          setMenuView('notifications');
+        }
+      }
+    };
+
+    const handleNavigateToChat = (event: any) => {
+      const detail = event.detail;
+      if (detail?.chatUserId && detail?.type === 'admin_chat_message') {
+        setIsAdminAuthenticated(true);
+        setActiveTab(Tab.Admin);
+        setAdminChatContext({ userId: detail.chatUserId, userName: detail.userName || 'Utilisateur', type: 'Privee' });
+      } else {
+        setActiveTab(Tab.UserChat);
+      }
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    }
+    window.addEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
+
+    return () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
+      window.removeEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
+    };
+  }, []);
 
 // Real-time synchronization logic removed
 

@@ -635,10 +635,15 @@ async function startServer() {
         return res.status(404).json({ error: "User FCM token not found in database" });
       }
 
+      const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+      const resolvedIcon = data?.icon || PLATFORM_LOGO;
+      const targetUrl = data?.url || '/?tab=userChat';
+
       const stringData: Record<string, string> = {
-        url: data?.url || '/',
+        url: targetUrl,
         title: String(title),
         body: String(body || ''),
+        icon: resolvedIcon,
         ...(imageUrl ? { image: String(imageUrl) } : {})
       };
 
@@ -656,14 +661,37 @@ async function startServer() {
           ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
         },
         data: stringData,
-        webpush: {
+        android: {
+          priority: 'high',
           notification: {
-            icon: '/icon.svg',
+            title: String(title),
+            body: String(body || ''),
+            icon: 'notification_icon',
+            color: '#2563eb',
+            sound: 'default',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+            priority: 'high',
+            visibility: 'public',
+            ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+          }
+        },
+        webpush: {
+          headers: {
+            Urgency: 'high'
+          },
+          notification: {
+            title: String(title),
+            body: String(body || ''),
+            icon: resolvedIcon,
             badge: '/icon.svg',
+            requireInteraction: true,
+            tag: data?.chatUserId ? `chat-${data.chatUserId}` : 'filant-push-notification',
+            renotify: true,
             ...(imageUrl ? { image: String(imageUrl) } : {})
           },
           fcmOptions: {
-            link: stringData.url || '/'
+            link: targetUrl
           }
         }
       };
@@ -709,12 +737,23 @@ async function startServer() {
             continue;
           }
 
+          const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+          const resolvedIcon = data?.icon || PLATFORM_LOGO;
+          const targetUrl = data?.url || '/?tab=userChat';
+
           const stringData: Record<string, string> = {
-            url: data?.url || '/',
+            url: targetUrl,
             title: String(title),
             body: String(body || ''),
+            icon: resolvedIcon,
             ...(imageUrl ? { image: String(imageUrl) } : {})
           };
+
+          if (data && typeof data === 'object') {
+            Object.keys(data).forEach(k => {
+              stringData[k] = String(data[k]);
+            });
+          }
 
           const message: any = {
             token: fcmToken,
@@ -724,14 +763,37 @@ async function startServer() {
               ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
             },
             data: stringData,
-            webpush: {
+            android: {
+              priority: 'high',
               notification: {
-                icon: '/icon.svg',
+                title: String(title),
+                body: String(body || ''),
+                icon: 'notification_icon',
+                color: '#2563eb',
+                sound: 'default',
+                defaultSound: true,
+                defaultVibrateTimings: true,
+                priority: 'high',
+                visibility: 'public',
+                ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+              }
+            },
+            webpush: {
+              headers: {
+                Urgency: 'high'
+              },
+              notification: {
+                title: String(title),
+                body: String(body || ''),
+                icon: resolvedIcon,
                 badge: '/icon.svg',
+                requireInteraction: true,
+                tag: 'filant-push-notification',
+                renotify: true,
                 ...(imageUrl ? { image: String(imageUrl) } : {})
               },
               fcmOptions: {
-                link: stringData.url || '/'
+                link: targetUrl
               }
             }
           };

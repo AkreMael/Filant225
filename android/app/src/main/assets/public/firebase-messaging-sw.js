@@ -14,16 +14,18 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
+const PLATFORM_LOGO = 'https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png';
+
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Background message: ', payload);
   const notificationTitle = payload.notification?.title || payload.data?.title || 'FILANT°225';
   const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouvelle notification reçue.',
-    icon: '/icon.svg',
+    body: payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouveau message reçu.',
+    icon: payload.notification?.icon || payload.data?.icon || PLATFORM_LOGO,
     badge: '/icon.svg',
     data: {
       ...payload.data,
-      url: payload.data?.url || '/'
+      url: payload.data?.url || '/?tab=userChat'
     }
   };
 
@@ -32,12 +34,15 @@ messaging.onBackgroundMessage((payload) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/';
+  const urlToOpen = event.notification.data?.url || '/?tab=userChat';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
+          if ('navigate' in client && urlToOpen) {
+            client.navigate(urlToOpen);
+          }
           return client.focus();
         }
       }

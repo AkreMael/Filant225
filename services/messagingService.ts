@@ -95,28 +95,44 @@ export const messagingService = {
             });
           }
 
+          const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+          const iconToUse = payload.notification?.icon || payload.data?.icon || PLATFORM_LOGO;
+
           // Afficher une notification système si autorisée
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             if ('serviceWorker' in navigator) {
               navigator.serviceWorker.ready.then(reg => {
                 reg.showNotification(title, {
                   body: body,
-                  icon: '/icon.svg',
+                  icon: iconToUse,
                   badge: '/icon.svg',
-                  tag: 'filant-foreground-notification',
-                  data: payload.data
+                  tag: payload.data?.chatUserId ? `chat-${payload.data.chatUserId}` : 'filant-foreground-notification',
+                  data: {
+                    ...payload.data,
+                    url: payload.data?.url || '/?tab=userChat'
+                  }
                 });
               }).catch(() => {
-                new Notification(title, {
+                const notifInstance = new Notification(title, {
                   body: body,
-                  icon: '/icon.svg'
+                  icon: iconToUse,
+                  data: payload.data
                 });
+                notifInstance.onclick = () => {
+                  window.focus();
+                  window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: payload.data }));
+                };
               });
             } else {
-              new Notification(title, {
+              const notifInstance = new Notification(title, {
                 body: body,
-                icon: '/icon.svg'
+                icon: iconToUse,
+                data: payload.data
               });
+              notifInstance.onclick = () => {
+                window.focus();
+                window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: payload.data }));
+              };
             }
           }
 

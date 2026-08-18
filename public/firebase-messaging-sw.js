@@ -14,14 +14,18 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
+const PLATFORM_LOGO = 'https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png';
+
 // ====== GESTION DES MESSAGES EN ARRIÈRE-PLAN (BACKGROUND MESSAGES) ======
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Message reçu en arrière-plan:', payload);
 
   const notificationTitle = payload.notification?.title || payload.data?.title || 'FILANT°225';
-  const notificationBody = payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouvelle notification reçue.';
-  const notificationIcon = payload.notification?.icon || payload.data?.icon || '/icon.svg';
-  const notificationImage = payload.notification?.image || payload.data?.image;
+  const notificationBody = payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouveau message reçu.';
+  const notificationIcon = payload.notification?.icon || payload.data?.icon || PLATFORM_LOGO;
+  const notificationImage = payload.notification?.image || payload.data?.image || undefined;
+
+  const targetUrl = payload.data?.url || payload.data?.click_action || '/?tab=userChat';
 
   const notificationOptions = {
     body: notificationBody,
@@ -30,13 +34,13 @@ messaging.onBackgroundMessage((payload) => {
     image: notificationImage,
     data: {
       ...payload.data,
-      url: payload.data?.url || payload.data?.click_action || '/'
+      url: targetUrl
     },
-    tag: payload.data?.tag || 'filant-background-notification',
+    tag: payload.data?.tag || `filant-msg-${payload.data?.chatUserId || 'global'}`,
     renotify: true,
     vibrate: [200, 100, 200],
     actions: [
-      { action: 'open', title: 'Ouvrir' }
+      { action: 'open', title: 'Ouvrir la discussion' }
     ]
   };
 
@@ -47,13 +51,22 @@ messaging.onBackgroundMessage((payload) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const urlToOpen = event.notification.data?.url || '/';
+  const data = event.notification.data || {};
+  let urlToOpen = data.url || '/?tab=userChat';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Si une fenêtre est déjà ouverte, la mettre au premier plan
+      // Si une fenêtre est déjà ouverte, la mettre au premier plan et notifier l'app
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
+          // Informer la page React d'ouvrir la discussion immédiatement
+          client.postMessage({
+            type: 'NOTIFICATION_CLICK',
+            data: data
+          });
+          if ('navigate' in client && urlToOpen) {
+            client.navigate(urlToOpen);
+          }
           return client.focus();
         }
       }
@@ -66,7 +79,7 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // ====== CACHE PWA POUR COMPATIBILITÉ HORS-LIGNE ======
-const CACHE_NAME = 'filant225-pwa-cache-v3';
+const CACHE_NAME = 'filant225-pwa-cache-v4';
 const ASSETS_TO_PRECACHE = [
   '/',
   'index.html',

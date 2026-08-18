@@ -1953,6 +1953,49 @@ export const databaseService = {
       return updated;
   },
 
+  triggerFCMNotification: (params: {
+    phone: string;
+    title: string;
+    body: string;
+    imageUrl?: string;
+    url?: string;
+    type?: string;
+    chatUserId?: string;
+    data?: Record<string, string>;
+  }) => {
+    try {
+      if (!params.phone || !params.title) return;
+      const sanitizedPhone = params.phone.replace(/\D/g, '');
+      if (!sanitizedPhone) return;
+
+      const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+
+      fetch('/api/notifications/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: sanitizedPhone,
+          title: params.title,
+          body: params.body || '',
+          imageUrl: params.imageUrl || PLATFORM_LOGO,
+          data: {
+            title: params.title,
+            body: params.body || '',
+            url: params.url || '/?tab=userChat',
+            icon: PLATFORM_LOGO,
+            type: params.type || 'chat_message',
+            chatUserId: params.chatUserId || sanitizedPhone,
+            ...(params.data || {})
+          }
+        })
+      }).catch(err => {
+        console.warn('Non-blocking server FCM trigger notice:', err);
+      });
+    } catch (e) {
+      console.warn('FCM dispatch failed silently:', e);
+    }
+  },
+
   sendNotificationToFirestore: async (phone: string, notification: Omit<Notification, 'id' | 'timestamp' | 'isRead'>) => {
     const sanitizedPhone = phone.replace(/\D/g, '');
     const cleanObject = (obj: any): any => {
@@ -1974,27 +2017,15 @@ export const databaseService = {
         isRead: false
       });
       
-      // Déclenchement automatique de la notification push FCM côté serveur vers le token FCM de l'utilisateur
-      try {
-        fetch('/api/notifications/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone: sanitizedPhone,
-            title: notification.title || 'FILANT°225',
-            body: notification.message || '',
-            imageUrl: notification.imageUrl,
-            data: {
-              title: notification.title || 'FILANT°225',
-              body: notification.message || '',
-              url: '/',
-              ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {})
-            }
-          })
-        }).catch(err => console.warn('Non-blocking server FCM trigger notice:', err));
-      } catch (fcmErr) {
-        console.warn('FCM dispatch failed silently:', fcmErr);
-      }
+      // Déclenchement automatique de la notification push FCM avec logo et redirection vers la discussion / notification
+      databaseService.triggerFCMNotification({
+        phone: sanitizedPhone,
+        title: notification.title || 'FILANT°225',
+        body: notification.message || '',
+        imageUrl: notification.imageUrl,
+        url: '/?tab=userChat',
+        type: 'platform_notification'
+      });
     } catch (e) {
       console.error("Error saving notification to Firestore:", e);
     }
@@ -3149,6 +3180,38 @@ export const databaseService = {
       // 3. Reset typing status when a message is sent
       const sender = message.sender || 'user';
       databaseService.setTypingStatus(type, userId, sender, false);
+
+      // 4. Déclenchement automatique de la notification push FCM avec logo et redirection
+      try {
+        const textContent = message.text || message.message || message.description || (message.audioUrl ? '🎤 Message vocal' : (message.imageUrl ? '📷 Photo' : 'Nouveau message reçu.'));
+        const snippet = textContent.length > 120 ? textContent.substring(0, 117) + '...' : textContent;
+
+        if (sender === 'admin' || sender === 'system' || message.type === 'assistant_reply') {
+          // Message envoyé par l'administration ou la plateforme => Notification push à l'utilisateur
+          databaseService.triggerFCMNotification({
+            phone: userId,
+            title: type === 'Assistant' ? 'FILANT°225 - Assistant' : 'FILANT°225 - Message',
+            body: snippet,
+            imageUrl: message.imageUrl,
+            url: '/?tab=userChat',
+            type: 'chat_message',
+            chatUserId: userId
+          });
+        } else if (sender === 'user') {
+          // Message envoyé par l'utilisateur => Notification push à l'administrateur
+          databaseService.triggerFCMNotification({
+            phone: ADMIN_PHONE,
+            title: `Message de ${finalName}`,
+            body: snippet,
+            imageUrl: message.imageUrl,
+            url: `/?tab=admin&sub=chat&chatUserId=${userId}`,
+            type: 'admin_chat_message',
+            chatUserId: userId
+          });
+        }
+      } catch (fcmErr) {
+        console.warn("FCM chat notification notice:", fcmErr);
+      }
 
       return true;
     } catch (e) {
