@@ -100,38 +100,43 @@ export const messagingService = {
 
           // Afficher une notification système si autorisée
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const notifTag = payload.data?.chatUserId ? `chat-${payload.data.chatUserId}` : (payload.data?.targetAction ? `action-${payload.data.targetAction}` : 'filant-foreground-notification');
+            const notifData = {
+              ...payload.data,
+              url: payload.data?.url || '/?tab=userChat'
+            };
+
             if ('serviceWorker' in navigator) {
               navigator.serviceWorker.ready.then(reg => {
                 reg.showNotification(title, {
                   body: body,
                   icon: iconToUse,
                   badge: '/icon.svg',
-                  tag: payload.data?.chatUserId ? `chat-${payload.data.chatUserId}` : 'filant-foreground-notification',
-                  data: {
-                    ...payload.data,
-                    url: payload.data?.url || '/?tab=userChat'
-                  }
+                  tag: notifTag,
+                  data: notifData
                 });
               }).catch(() => {
                 const notifInstance = new Notification(title, {
                   body: body,
                   icon: iconToUse,
-                  data: payload.data
+                  data: notifData
                 });
                 notifInstance.onclick = () => {
                   window.focus();
-                  window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: payload.data }));
+                  window.dispatchEvent(new CustomEvent('deep-link-navigation', { detail: notifData }));
+                  window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: notifData }));
                 };
               });
             } else {
               const notifInstance = new Notification(title, {
                 body: body,
                 icon: iconToUse,
-                data: payload.data
+                data: notifData
               });
               notifInstance.onclick = () => {
                 window.focus();
-                window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: payload.data }));
+                window.dispatchEvent(new CustomEvent('deep-link-navigation', { detail: notifData }));
+                window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: notifData }));
               };
             }
           }

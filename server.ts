@@ -686,8 +686,9 @@ async function startServer() {
             icon: resolvedIcon,
             badge: '/icon.svg',
             requireInteraction: true,
-            tag: data?.chatUserId ? `chat-${data.chatUserId}` : 'filant-push-notification',
+            tag: data?.chatUserId ? `chat-${data.chatUserId}` : (data?.targetAction ? `action-${data.targetAction}` : 'filant-push-notification'),
             renotify: true,
+            data: stringData,
             ...(imageUrl ? { image: String(imageUrl) } : {})
           },
           fcmOptions: {
@@ -788,8 +789,9 @@ async function startServer() {
                 icon: resolvedIcon,
                 badge: '/icon.svg',
                 requireInteraction: true,
-                tag: 'filant-push-notification',
+                tag: data?.chatUserId ? `chat-${data.chatUserId}` : (data?.targetAction ? `action-${data.targetAction}` : 'filant-push-notification'),
                 renotify: true,
+                data: stringData,
                 ...(imageUrl ? { image: String(imageUrl) } : {})
               },
               fcmOptions: {

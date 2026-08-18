@@ -1961,6 +1961,7 @@ export const databaseService = {
     url?: string;
     type?: string;
     chatUserId?: string;
+    userName?: string;
     data?: Record<string, string>;
   }) => {
     try {
@@ -1969,6 +1970,18 @@ export const databaseService = {
       if (!sanitizedPhone) return;
 
       const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+      const resolvedUrl = params.url || params.data?.url || '/?tab=userChat';
+
+      const payloadData: Record<string, string> = {
+        title: params.title,
+        body: params.body || '',
+        url: resolvedUrl,
+        icon: PLATFORM_LOGO,
+        type: params.type || 'chat_message',
+        chatUserId: params.chatUserId || sanitizedPhone,
+        userName: params.userName || '',
+        ...(params.data || {})
+      };
 
       fetch('/api/notifications/send', {
         method: 'POST',
@@ -1978,15 +1991,7 @@ export const databaseService = {
           title: params.title,
           body: params.body || '',
           imageUrl: params.imageUrl || PLATFORM_LOGO,
-          data: {
-            title: params.title,
-            body: params.body || '',
-            url: params.url || '/?tab=userChat',
-            icon: PLATFORM_LOGO,
-            type: params.type || 'chat_message',
-            chatUserId: params.chatUserId || sanitizedPhone,
-            ...(params.data || {})
-          }
+          data: payloadData
         })
       }).catch(err => {
         console.warn('Non-blocking server FCM trigger notice:', err);
@@ -2017,14 +2022,92 @@ export const databaseService = {
         isRead: false
       });
       
-      // Déclenchement automatique de la notification push FCM avec logo et redirection vers la discussion / notification
+      // Calcul intelligent du routage contextuel (Deep Link) selon l'action du bouton de la notification
+      let targetUrl = '/?tab=notifications';
+      let targetTab = 'Notifications';
+      let targetView = 'notifications';
+      let targetAction = '';
+      let searchFilter = '';
+      let amountStr = '';
+
+      // Recherche du premier bouton configuré dans la notification ou ses étapes
+      const firstBtn = (notification.buttons && notification.buttons.length > 0)
+        ? notification.buttons[0]
+        : (notification.steps && notification.steps.length > 0 && notification.steps[0].buttons && notification.steps[0].buttons.length > 0)
+          ? notification.steps[0].buttons[0]
+          : null;
+
+      if (firstBtn) {
+        targetAction = firstBtn.action || '';
+        switch (firstBtn.action) {
+          case 'qr_code':
+            targetTab = 'MyQRCode';
+            targetUrl = `/?tab=qr&phone=${sanitizedPhone}`;
+            break;
+          case 'recherche':
+            targetTab = 'Menu';
+            targetView = 'demande_recherche';
+            searchFilter = firstBtn.searchFilter || '';
+            targetUrl = searchFilter ? `/?tab=recherche&q=${encodeURIComponent(searchFilter)}` : '/?tab=recherche';
+            break;
+          case 'simple_demande':
+            targetTab = 'Menu';
+            targetAction = 'simple_demande';
+            targetUrl = '/?tab=simple_demande';
+            break;
+          case 'inscription':
+            targetTab = 'Menu';
+            targetAction = 'inscription';
+            targetUrl = '/?tab=inscription';
+            break;
+          case 'paiement':
+            targetTab = 'Menu';
+            targetAction = 'paiement';
+            amountStr = (firstBtn.amount || 0).toString();
+            targetUrl = `/?tab=paiement&amount=${amountStr}`;
+            break;
+          case 'travailleurs':
+            targetTab = 'Menu';
+            targetView = 'worker_list';
+            targetUrl = '/?tab=worker_list';
+            break;
+          case 'equipements':
+            targetTab = 'Menu';
+            targetView = 'location_hub';
+            targetUrl = '/?tab=location_hub&sub=equipement';
+            break;
+          case 'agences':
+            targetTab = 'Menu';
+            targetView = 'location_hub';
+            targetUrl = '/?tab=location_hub&sub=appartement';
+            break;
+          default:
+            targetTab = 'Notifications';
+            targetView = 'notifications';
+            targetUrl = '/?tab=notifications';
+            break;
+        }
+      }
+
+      // Déclenchement automatique de la notification push FCM avec logo et redirection contextuelle
       databaseService.triggerFCMNotification({
         phone: sanitizedPhone,
         title: notification.title || 'FILANT°225',
         body: notification.message || '',
         imageUrl: notification.imageUrl,
-        url: '/?tab=userChat',
-        type: 'platform_notification'
+        url: targetUrl,
+        type: 'platform_notification',
+        data: {
+          targetTab,
+          targetView,
+          targetAction,
+          searchFilter,
+          amount: amountStr,
+          url: targetUrl,
+          title: notification.title || 'FILANT°225',
+          body: notification.message || '',
+          type: 'platform_notification'
+        }
       });
     } catch (e) {
       console.error("Error saving notification to Firestore:", e);
@@ -3188,25 +3271,42 @@ export const databaseService = {
 
         if (sender === 'admin' || sender === 'system' || message.type === 'assistant_reply') {
           // Message envoyé par l'administration ou la plateforme => Notification push à l'utilisateur
+          const userChatUrl = `/?tab=userChat&chatUserId=${userId}`;
           databaseService.triggerFCMNotification({
             phone: userId,
             title: type === 'Assistant' ? 'FILANT°225 - Assistant' : 'FILANT°225 - Message',
             body: snippet,
             imageUrl: message.imageUrl,
-            url: '/?tab=userChat',
+            url: userChatUrl,
             type: 'chat_message',
-            chatUserId: userId
+            chatUserId: userId,
+            data: {
+              targetTab: 'userChat',
+              chatUserId: userId,
+              type: 'chat_message',
+              url: userChatUrl
+            }
           });
         } else if (sender === 'user') {
           // Message envoyé par l'utilisateur => Notification push à l'administrateur
+          const adminChatUrl = `/?tab=admin&sub=chat&chatUserId=${userId}&userName=${encodeURIComponent(finalName)}`;
           databaseService.triggerFCMNotification({
             phone: ADMIN_PHONE,
             title: `Message de ${finalName}`,
             body: snippet,
             imageUrl: message.imageUrl,
-            url: `/?tab=admin&sub=chat&chatUserId=${userId}`,
+            url: adminChatUrl,
             type: 'admin_chat_message',
-            chatUserId: userId
+            chatUserId: userId,
+            userName: finalName,
+            data: {
+              targetTab: 'admin',
+              targetSub: 'chat',
+              chatUserId: userId,
+              userName: finalName,
+              type: 'admin_chat_message',
+              url: adminChatUrl
+            }
           });
         }
       } catch (fcmErr) {

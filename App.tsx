@@ -340,6 +340,13 @@ const App: React.FC = () => {
 
   // RAW states (do not push to history when set directly during popping/restoring)
   const [showSmartRegistrationRaw, setShowSmartRegistrationRaw] = useState(false);
+  const [showFullRegistrationRaw, setShowFullRegistrationRaw] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('tab') === 'inscription' || params.get('action') === 'inscription';
+    }
+    return false;
+  });
   const [activeTabRaw, setActiveTabRaw] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -350,10 +357,21 @@ const App: React.FC = () => {
       if (tabParam === 'admin') {
         return Tab.Admin;
       }
+      if (tabParam === 'qr' || tabParam === 'qrcode' || tabParam === 'myqrcode' || tabParam === 'code_qr') {
+        return Tab.MyQRCode;
+      }
+      if (tabParam === 'payment' || tabParam === 'paiement') {
+        return Tab.Payment;
+      }
+      if (tabParam === 'notifications') {
+        return Tab.Notifications;
+      }
+      if (tabParam === 'emergency') {
+        return Tab.Emergency;
+      }
     }
     return Tab.Menu;
   });
-  const [showFullRegistrationRaw, setShowFullRegistrationRaw] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -367,11 +385,27 @@ const App: React.FC = () => {
   const [menuViewRaw, setMenuViewRaw] = useState<'hub' | 'worker_list' | 'notifications' | 'emergency_form' | 'assistant_qr' | 'services_requests' | 'admin_dashboard' | 'location_hub' | 'location_map' | 'stage_formation_hub' | 'demande_recherche'>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('adId')) {
+      const tabParam = params.get('tab');
+      if (params.get('adId') || tabParam === 'demande_recherche' || tabParam === 'recherche' || params.get('action') === 'recherche') {
         return 'demande_recherche';
       }
-      if (params.get('tab') === 'notifications') {
+      if (tabParam === 'notifications') {
         return 'notifications';
+      }
+      if (tabParam === 'services_requests' || tabParam === 'services') {
+        return 'services_requests';
+      }
+      if (tabParam === 'worker_list' || tabParam === 'travailleurs' || params.get('action') === 'travailleurs') {
+        return 'worker_list';
+      }
+      if (tabParam === 'location_hub') {
+        return 'location_hub';
+      }
+      if (tabParam === 'stage_formation_hub' || tabParam === 'stage_formation') {
+        return 'stage_formation_hub';
+      }
+      if (tabParam === 'emergency_form') {
+        return 'emergency_form';
       }
     }
     return 'hub';
@@ -393,8 +427,33 @@ const App: React.FC = () => {
   const [offerSubViewRaw, setOfferSubViewRaw] = useState<'main' | 'shop' | 'info_travailleurs' | 'info_clients'>('main');
   const [isProfileOpenRaw, setIsProfileOpenRaw] = useState(false);
   const [showScannerGlobalRaw, setShowScannerGlobalRaw] = useState(false);
-  const [paymentConfirmationContextRaw, setPaymentConfirmationContextRaw] = useState<PaymentConfirmationContext | null>(null);
-  const [interactiveModalContextRaw, setInteractiveModalContextRaw] = useState<InteractiveModalContext | null>(null);
+  const [paymentConfirmationContextRaw, setPaymentConfirmationContextRaw] = useState<PaymentConfirmationContext | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'paiement' || params.get('action') === 'paiement') {
+        const payAmount = parseFloat(params.get('amount') || '0') || 0;
+        return {
+          title: params.get('title') || "Règlement demandé",
+          amount: payAmount.toString(),
+          paymentType: "Paiement de Notification",
+          waveLink: `https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=${payAmount}`
+        };
+      }
+    }
+    return null;
+  });
+  const [interactiveModalContextRaw, setInteractiveModalContextRaw] = useState<InteractiveModalContext | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('tab') === 'simple_demande' || params.get('action') === 'simple_demande') {
+        return {
+          formType: 'simple_demande',
+          title: params.get('title') || "Formulaire de Demande"
+        };
+      }
+    }
+    return null;
+  });
 
   const [navHistory, setNavHistory] = useState<NavigationPoint[]>([]);
   const navHistoryRef = useRef<NavigationPoint[]>([]);
@@ -995,20 +1054,147 @@ const App: React.FC = () => {
     }
   }, [currentUser]);
 
+  // Contextual Deep Link Routing Handler
+  const handleDeepLink = useCallback((data: any) => {
+    if (!data) return;
+
+    const url = data.url || '';
+    let urlParams: URLSearchParams | null = null;
+    if (url && url.includes('?')) {
+      try {
+        urlParams = new URLSearchParams(url.split('?')[1]);
+      } catch (e) {
+        console.warn("URL parse error in deep link:", e);
+      }
+    }
+
+    const targetTab = data.targetTab || urlParams?.get('tab') || '';
+    const targetSub = data.targetSub || urlParams?.get('sub') || '';
+    const targetView = data.targetView || urlParams?.get('view') || '';
+    const targetAction = data.targetAction || data.action || urlParams?.get('action') || '';
+    const chatUserId = data.chatUserId || urlParams?.get('chatUserId') || '';
+    const userName = data.userName || urlParams?.get('userName') || 'Utilisateur';
+    const type = data.type || '';
+    const searchFilter = data.searchFilter || data.query || urlParams?.get('q') || urlParams?.get('searchFilter') || '';
+    const amount = data.amount || urlParams?.get('amount') || '';
+    const adId = data.adId || urlParams?.get('adId') || '';
+
+    // 1. Admin Chat Message / Discussion Admin Deep Link
+    if (targetTab === 'admin' || targetSub === 'chat' || type === 'admin_chat_message' || url.includes('tab=admin')) {
+      setIsAdminAuthenticated(true);
+      setActiveTab(Tab.Admin);
+      if (chatUserId) {
+        setAdminChatContext({ userId: chatUserId, userName: userName, type: 'Privee' });
+      }
+      return;
+    }
+
+    // 2. User Chat / Discussion Client Deep Link
+    if (targetTab === 'userChat' || targetTab === 'chat' || targetTab === 'messages' || type === 'chat_message' || url.includes('tab=userChat')) {
+      setActiveTab(Tab.UserChat);
+      return;
+    }
+
+    // 3. QR Code Deep Link
+    if (targetTab === 'MyQRCode' || targetTab === 'qr' || targetAction === 'qr_code' || url.includes('tab=qr')) {
+      setActiveTab(Tab.MyQRCode);
+      return;
+    }
+
+    // 4. Recherche / Demande de recherche Deep Link
+    if (targetAction === 'recherche' || targetView === 'demande_recherche' || targetTab === 'recherche' || targetTab === 'demande_recherche' || url.includes('tab=recherche') || url.includes('demande_recherche') || adId) {
+      setActiveTab(Tab.Menu);
+      setMenuView('demande_recherche');
+      return;
+    }
+
+    // 5. Formulaire de Demande Simple Deep Link
+    if (targetAction === 'simple_demande' || targetTab === 'simple_demande' || url.includes('tab=simple_demande')) {
+      setActiveTab(Tab.Menu);
+      setInteractiveModalContext({
+        formType: 'simple_demande',
+        title: data.title || data.message || "Formulaire de Demande"
+      });
+      return;
+    }
+
+    // 6. Inscription Deep Link
+    if (targetAction === 'inscription' || targetTab === 'inscription' || url.includes('tab=inscription')) {
+      setShowFullRegistration(true);
+      return;
+    }
+
+    // 7. Paiement Deep Link
+    if (targetAction === 'paiement' || targetTab === 'paiement' || targetTab === 'payment' || url.includes('tab=paiement') || url.includes('tab=payment')) {
+      const payAmount = parseFloat(amount) || 0;
+      setPaymentConfirmationContext({
+        title: data.title || "Règlement demandé",
+        amount: payAmount.toString(),
+        paymentType: "Paiement de Notification",
+        waveLink: `https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=${payAmount}`
+      });
+      return;
+    }
+
+    // 8. Services Requests Deep Link
+    if (targetView === 'services_requests' || targetTab === 'services_requests' || targetTab === 'services' || url.includes('services_requests') || url.includes('tab=services')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('services_requests');
+      return;
+    }
+
+    // 9. Liste des travailleurs Deep Link
+    if (targetView === 'worker_list' || targetAction === 'travailleurs' || targetTab === 'worker_list' || url.includes('worker_list')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('worker_list');
+      return;
+    }
+
+    // 10. Location Hub / Equipements / Agences Deep Link
+    if (targetView === 'location_hub' || targetAction === 'equipements' || targetAction === 'agences' || url.includes('location_hub')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('location_hub');
+      return;
+    }
+
+    // 11. Urgence / Emergency Deep Link
+    if (targetTab === 'emergency' || targetView === 'emergency_form' || url.includes('tab=emergency')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('emergency_form');
+      return;
+    }
+
+    // 12. Stage / Formation Deep Link
+    if (targetView === 'stage_formation_hub' || targetTab === 'stage_formation_hub' || url.includes('stage_formation')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('stage_formation_hub');
+      return;
+    }
+
+    // 13. Notifications Center Deep Link
+    if (targetTab === 'notifications' || targetView === 'notifications' || url.includes('tab=notifications')) {
+      setActiveTab(Tab.Menu);
+      setMenuView('notifications');
+      return;
+    }
+
+    // Fallback direct
+    if (targetTab && Object.values(Tab).includes(targetTab as any)) {
+      setActiveTab(targetTab as Tab);
+    }
+  }, []);
+
   // Listener for Push Notification click redirections (from Service Worker and CustomEvents)
   useEffect(() => {
     const handleSWMessage = (event: MessageEvent) => {
       if (event.data?.type === 'NOTIFICATION_CLICK') {
         const notifData = event.data.data;
-        if (notifData?.chatUserId || notifData?.targetTab === 'userChat' || notifData?.type === 'chat_message' || notifData?.type === 'platform_notification') {
-          setActiveTab(Tab.UserChat);
-        } else if (notifData?.url && notifData.url.includes('tab=userChat')) {
-          setActiveTab(Tab.UserChat);
-        } else if (notifData?.url && notifData.url.includes('tab=notifications')) {
-          setActiveTab(Tab.Menu);
-          setMenuView('notifications');
-        }
+        handleDeepLink(notifData);
       }
+    };
+
+    const handleDeepLinkEvent = (event: any) => {
+      handleDeepLink(event.detail);
     };
 
     const handleNavigateToChat = (event: any) => {
@@ -1018,22 +1204,24 @@ const App: React.FC = () => {
         setActiveTab(Tab.Admin);
         setAdminChatContext({ userId: detail.chatUserId, userName: detail.userName || 'Utilisateur', type: 'Privee' });
       } else {
-        setActiveTab(Tab.UserChat);
+        handleDeepLink(detail || { targetTab: 'userChat' });
       }
     };
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
+    window.addEventListener('deep-link-navigation' as any, handleDeepLinkEvent as any);
     window.addEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
 
     return () => {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
       }
+      window.removeEventListener('deep-link-navigation' as any, handleDeepLinkEvent as any);
       window.removeEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
     };
-  }, []);
+  }, [handleDeepLink]);
 
 // Real-time synchronization logic removed
 

@@ -78,7 +78,15 @@ type AdminTab =
   | 'disponible';
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenChat, onSwitchToApp }) => {
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('sub') === 'chat' || params.get('chatUserId')) {
+        return 'private';
+      }
+    }
+    return 'overview';
+  });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItemForDetails, setSelectedItemForDetails] = useState<any>(null);

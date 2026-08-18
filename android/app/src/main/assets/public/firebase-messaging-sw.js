@@ -19,30 +19,39 @@ const PLATFORM_LOGO = 'https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd1
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Background message: ', payload);
   const notificationTitle = payload.notification?.title || payload.data?.title || 'FILANT°225';
+  const notificationBody = payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouveau message reçu.';
+  const notificationIcon = payload.notification?.icon || payload.data?.icon || PLATFORM_LOGO;
+  const targetUrl = payload.data?.url || '/?tab=userChat';
+
   const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouveau message reçu.',
-    icon: payload.notification?.icon || payload.data?.icon || PLATFORM_LOGO,
+    body: notificationBody,
+    icon: notificationIcon,
     badge: '/icon.svg',
     data: {
       ...payload.data,
-      url: payload.data?.url || '/?tab=userChat'
-    }
+      url: targetUrl
+    },
+    tag: payload.data?.tag || (payload.data?.chatUserId ? `filant-chat-${payload.data.chatUserId}` : (payload.data?.targetAction ? `filant-act-${payload.data.targetAction}` : 'filant-notification')),
+    renotify: true,
+    vibrate: [200, 100, 200]
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const urlToOpen = event.notification.data?.url || '/?tab=userChat';
+  const data = event.notification.data || {};
+  const urlToOpen = data.url || '/?tab=userChat';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          if ('navigate' in client && urlToOpen) {
-            client.navigate(urlToOpen);
-          }
+          client.postMessage({
+            type: 'NOTIFICATION_CLICK',
+            data: data
+          });
           return client.focus();
         }
       }

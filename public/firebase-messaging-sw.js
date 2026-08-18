@@ -27,6 +27,17 @@ messaging.onBackgroundMessage((payload) => {
 
   const targetUrl = payload.data?.url || payload.data?.click_action || '/?tab=userChat';
 
+  let actionTitle = 'Ouvrir';
+  if (payload.data?.targetAction === 'qr_code' || targetUrl.includes('tab=qr')) {
+    actionTitle = 'Voir le code QR';
+  } else if (payload.data?.type === 'chat_message' || payload.data?.type === 'admin_chat_message' || targetUrl.includes('userChat')) {
+    actionTitle = 'Ouvrir la discussion';
+  } else if (payload.data?.targetAction === 'recherche' || targetUrl.includes('recherche')) {
+    actionTitle = 'Voir la recherche';
+  } else if (payload.data?.targetAction === 'paiement' || targetUrl.includes('paiement')) {
+    actionTitle = 'Accéder au paiement';
+  }
+
   const notificationOptions = {
     body: notificationBody,
     icon: notificationIcon,
@@ -36,11 +47,11 @@ messaging.onBackgroundMessage((payload) => {
       ...payload.data,
       url: targetUrl
     },
-    tag: payload.data?.tag || `filant-msg-${payload.data?.chatUserId || 'global'}`,
+    tag: payload.data?.tag || (payload.data?.chatUserId ? `filant-chat-${payload.data.chatUserId}` : (payload.data?.targetAction ? `filant-act-${payload.data.targetAction}` : 'filant-notification')),
     renotify: true,
     vibrate: [200, 100, 200],
     actions: [
-      { action: 'open', title: 'Ouvrir la discussion' }
+      { action: 'open', title: actionTitle }
     ]
   };
 
@@ -59,14 +70,11 @@ self.addEventListener('notificationclick', (event) => {
       // Si une fenêtre est déjà ouverte, la mettre au premier plan et notifier l'app
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          // Informer la page React d'ouvrir la discussion immédiatement
+          // Informer la page React d'ouvrir la vue contextuelle
           client.postMessage({
             type: 'NOTIFICATION_CLICK',
             data: data
           });
-          if ('navigate' in client && urlToOpen) {
-            client.navigate(urlToOpen);
-          }
           return client.focus();
         }
       }
