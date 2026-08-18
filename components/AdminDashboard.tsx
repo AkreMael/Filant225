@@ -81,12 +81,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('sub') === 'chat' || params.get('chatUserId')) {
-        return 'private';
-      }
+      const sub = params.get('sub');
+      if (sub === 'chat' || params.get('chatUserId')) return 'private';
+      if (sub === 'inscriptions') return 'inscriptions';
+      if (sub === 'requests' || sub === 'demandes') return 'requests';
+      if (sub === 'payments' || sub === 'paiements') return 'payments';
+      if (sub === 'workers' || sub === 'travailleurs') return 'workers';
+      if (sub === 'agencies' || sub === 'agences') return 'agencies';
+      if (sub === 'equipments' || sub === 'equipements') return 'equipments';
+      if (sub === 'users' || sub === 'clients') return 'users';
+      if (sub === 'notifications') return 'notifications';
     }
     return 'overview';
   });
+
+  useEffect(() => {
+    const handleAdminNav = (e: any) => {
+      const targetSub = e.detail?.targetSub || e.detail?.tab;
+      if (targetSub) {
+        if (targetSub === 'chat') setActiveTab('private');
+        else if (targetSub === 'inscriptions') setActiveTab('inscriptions');
+        else if (targetSub === 'requests' || targetSub === 'demandes') setActiveTab('requests');
+        else if (targetSub === 'payments' || targetSub === 'paiements') setActiveTab('payments');
+        else if (targetSub === 'workers' || targetSub === 'travailleurs') setActiveTab('workers');
+        else if (targetSub === 'agencies' || targetSub === 'agences') setActiveTab('agencies');
+        else if (targetSub === 'equipments' || targetSub === 'equipements') setActiveTab('equipments');
+        else if (targetSub === 'users' || targetSub === 'clients') setActiveTab('users');
+        else if (targetSub === 'notifications') setActiveTab('notifications');
+      }
+    };
+    window.addEventListener('admin-navigate-tab', handleAdminNav);
+    return () => window.removeEventListener('admin-navigate-tab', handleAdminNav);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItemForDetails, setSelectedItemForDetails] = useState<any>(null);

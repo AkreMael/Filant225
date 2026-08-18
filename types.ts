@@ -34,7 +34,7 @@ export interface User {
 
 export interface NotificationButton {
   label: string;
-  action: 'travailleurs' | 'equipements' | 'agences' | 'recherche' | 'simple_demande' | 'url_link' | 'qr_code' | 'paiement' | 'inscription';
+  action: 'travailleurs' | 'equipements' | 'agences' | 'recherche' | 'simple_demande' | 'url_link' | 'qr_code' | 'paiement' | 'inscription' | 'inscriptions' | 'requests' | 'demandes' | 'services_requests' | 'payments' | string;
   searchFilter?: string; // Optional filter for search
   amount?: number; // Optional amount for payment
 }

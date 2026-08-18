@@ -1086,6 +1086,11 @@ const App: React.FC = () => {
       if (chatUserId) {
         setAdminChatContext({ userId: chatUserId, userName: userName, type: 'Privee' });
       }
+      if (targetSub) {
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('admin-navigate-tab', { detail: { targetSub } }));
+        }, 100);
+      }
       return;
     }
 

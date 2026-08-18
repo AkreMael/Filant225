@@ -89,7 +89,7 @@ const getGeminiClient = () => {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   app.set("trust proxy", 1);
   app.use(express.json({ limit: "50mb" }));
@@ -617,15 +617,31 @@ async function startServer() {
         const dbInstance = await getClientDb();
         // Check in Clients collection
         const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
-        if (clientDocSnap.exists()) {
+        if (clientDocSnap.exists() && clientDocSnap.data()?.fcmToken) {
           fcmToken = clientDocSnap.data()?.fcmToken;
         }
 
-        // Fallback: Check Inscriptions collection if token not in Clients
+        // Fallback 1: Check Inscriptions collection if token not in Clients
         if (!fcmToken) {
           const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
-          if (inscDocSnap.exists()) {
+          if (inscDocSnap.exists() && inscDocSnap.data()?.fcmToken) {
             fcmToken = inscDocSnap.data()?.fcmToken;
+          }
+        }
+
+        // Fallback 2: Check FCMTokens collection
+        if (!fcmToken) {
+          const fcmDocSnap = await clientGetDoc(clientDoc(dbInstance, "FCMTokens", sanitizedPhone));
+          if (fcmDocSnap.exists() && fcmDocSnap.data()?.fcmToken) {
+            fcmToken = fcmDocSnap.data()?.fcmToken;
+          }
+        }
+
+        // Fallback 3: Check Users collection
+        if (!fcmToken) {
+          const userDocSnap = await clientGetDoc(clientDoc(dbInstance, "Users", sanitizedPhone));
+          if (userDocSnap.exists() && userDocSnap.data()?.fcmToken) {
+            fcmToken = userDocSnap.data()?.fcmToken;
           }
         }
       }
@@ -723,13 +739,25 @@ async function startServer() {
           // Check token in Clients
           let fcmToken: string | undefined;
           const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
-          if (clientDocSnap.exists()) {
+          if (clientDocSnap.exists() && clientDocSnap.data()?.fcmToken) {
             fcmToken = clientDocSnap.data()?.fcmToken;
           }
           if (!fcmToken) {
             const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
-            if (inscDocSnap.exists()) {
+            if (inscDocSnap.exists() && inscDocSnap.data()?.fcmToken) {
               fcmToken = inscDocSnap.data()?.fcmToken;
+            }
+          }
+          if (!fcmToken) {
+            const fcmDocSnap = await clientGetDoc(clientDoc(dbInstance, "FCMTokens", sanitizedPhone));
+            if (fcmDocSnap.exists() && fcmDocSnap.data()?.fcmToken) {
+              fcmToken = fcmDocSnap.data()?.fcmToken;
+            }
+          }
+          if (!fcmToken) {
+            const userDocSnap = await clientGetDoc(clientDoc(dbInstance, "Users", sanitizedPhone));
+            if (userDocSnap.exists() && userDocSnap.data()?.fcmToken) {
+              fcmToken = userDocSnap.data()?.fcmToken;
             }
           }
 
@@ -813,6 +841,157 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error in bulk FCM send:", error);
       res.status(500).json({ error: "Failed to send bulk notifications", details: error.message });
+    }
+  });
+
+  // Broadcast FCM endpoint supporting role filtering (all, clients, workers, equipments, agencies, admins)
+  app.post("/api/notifications/broadcast", async (req, res) => {
+    try {
+      const { role, title, body, imageUrl, data } = req.body;
+      if (!title) {
+        return res.status(400).json({ error: "Missing notification title" });
+      }
+
+      const dbInstance = await getClientDb();
+      const targetTokens = new Map<string, string>(); // token -> phone/id
+
+      const collectTokensFromSnap = (snap: any, roleFilter?: string) => {
+        snap.forEach((d: any) => {
+          const docData = d.data();
+          const token = docData?.fcmToken;
+          if (token && typeof token === 'string' && token.length > 10) {
+            if (!roleFilter || roleFilter === 'all') {
+              targetTokens.set(token, d.id);
+            } else if (roleFilter === 'workers' || roleFilter === 'travailleurs') {
+              if (docData.profileType === 'Travailleur' || docData.job || docData.role === 'worker') {
+                targetTokens.set(token, d.id);
+              }
+            } else if (roleFilter === 'equipments' || roleFilter === 'equipements') {
+              if (docData.profileType === 'Propriétaire' || docData.equipmentType || docData.role === 'equipment') {
+                targetTokens.set(token, d.id);
+              }
+            } else if (roleFilter === 'agencies' || roleFilter === 'agences') {
+              if (docData.profileType === 'Agence' || docData.profileType === 'Agence immobilière' || docData.agencyName || docData.role === 'agency') {
+                targetTokens.set(token, d.id);
+              }
+            } else if (roleFilter === 'clients') {
+              if (docData.role === 'client' || !docData.profileType) {
+                targetTokens.set(token, d.id);
+              }
+            } else if (roleFilter === 'admins') {
+              if (d.id === '0701020304' || d.id === '0719875153' || docData.role === 'admin') {
+                targetTokens.set(token, d.id);
+              }
+            }
+          }
+        });
+      };
+
+      try {
+        const clientsSnap = await clientGetDocs(clientCollection(dbInstance, "Clients"));
+        collectTokensFromSnap(clientsSnap, role);
+      } catch (err) {
+        console.warn("Could not query Clients for broadcast:", err);
+      }
+
+      try {
+        const inscSnap = await clientGetDocs(clientCollection(dbInstance, "Inscriptions"));
+        collectTokensFromSnap(inscSnap, role);
+      } catch (err) {
+        console.warn("Could not query Inscriptions for broadcast:", err);
+      }
+
+      try {
+        const fcmSnap = await clientGetDocs(clientCollection(dbInstance, "FCMTokens"));
+        collectTokensFromSnap(fcmSnap, role);
+      } catch (err) {
+        console.warn("Could not query FCMTokens for broadcast:", err);
+      }
+
+      const tokenList = Array.from(targetTokens.keys());
+      if (tokenList.length === 0) {
+        console.log("No registered device tokens found for broadcast role:", role || 'all');
+        return res.json({ success: true, count: 0, total: 0, message: "No active FCM tokens found for this target group" });
+      }
+
+      const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+      const resolvedIcon = data?.icon || PLATFORM_LOGO;
+      const targetUrl = data?.url || '/?tab=notifications';
+
+      const stringData: Record<string, string> = {
+        url: targetUrl,
+        title: String(title),
+        body: String(body || ''),
+        icon: resolvedIcon,
+        targetRole: String(role || 'all'),
+        ...(imageUrl ? { image: String(imageUrl) } : {})
+      };
+
+      if (data && typeof data === 'object') {
+        Object.keys(data).forEach(k => {
+          stringData[k] = String(data[k]);
+        });
+      }
+
+      let sentCount = 0;
+      for (const token of tokenList) {
+        try {
+          const message: any = {
+            token: token,
+            notification: {
+              title: String(title),
+              body: String(body || ''),
+              ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+            },
+            data: stringData,
+            android: {
+              priority: 'high',
+              notification: {
+                title: String(title),
+                body: String(body || ''),
+                icon: 'notification_icon',
+                color: '#2563eb',
+                sound: 'default',
+                defaultSound: true,
+                defaultVibrateTimings: true,
+                priority: 'high',
+                visibility: 'public',
+                ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+              }
+            },
+            webpush: {
+              headers: {
+                Urgency: 'high'
+              },
+              notification: {
+                title: String(title),
+                body: String(body || ''),
+                icon: resolvedIcon,
+                badge: '/icon.svg',
+                requireInteraction: true,
+                tag: data?.targetAction ? `action-${data.targetAction}` : 'filant-broadcast-notification',
+                renotify: true,
+                data: stringData,
+                ...(imageUrl ? { image: String(imageUrl) } : {})
+              },
+              fcmOptions: {
+                link: targetUrl
+              }
+            }
+          };
+
+          await admin.messaging().send(message);
+          sentCount++;
+        } catch (itemErr) {
+          console.warn(`FCM broadcast token send failed:`, itemErr);
+        }
+      }
+
+      console.log(`Broadcast FCM push complete: ${sentCount}/${tokenList.length} sent for role: ${role || 'all'}`);
+      res.json({ success: true, count: sentCount, total: tokenList.length });
+    } catch (error: any) {
+      console.error("Error in broadcast FCM send:", error);
+      res.status(500).json({ error: "Failed to broadcast notifications", details: error.message });
     }
   });
 

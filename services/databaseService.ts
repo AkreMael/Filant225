@@ -554,11 +554,27 @@ export const databaseService = {
     if (!user || !user.phone || !token) return;
     
     const sanitizedPhone = user.phone.replace(/\D/g, '');
-    const userRef = doc(db, 'Clients', sanitizedPhone);
+    if (!sanitizedPhone) return;
+
+    const tokenPayload = {
+      fcmToken: token,
+      phone: sanitizedPhone,
+      userName: user.name || '',
+      role: user.role || 'client',
+      updatedAt: serverTimestamp()
+    };
     
     try {
-      await setDoc(userRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true });
-      console.log("FCM Token saved to Firestore for:", user.name);
+      const clientRef = doc(db, 'Clients', sanitizedPhone);
+      const inscRef = doc(db, 'Inscriptions', sanitizedPhone);
+      const fcmRef = doc(db, 'FCMTokens', sanitizedPhone);
+
+      await Promise.allSettled([
+        setDoc(clientRef, tokenPayload, { merge: true }),
+        setDoc(inscRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }),
+        setDoc(fcmRef, tokenPayload, { merge: true })
+      ]);
+      console.log("FCM Token saved across collections for:", user.name || sanitizedPhone);
     } catch (e) {
       console.error("Error saving FCM token to Firestore:", e);
     }
@@ -2001,6 +2017,46 @@ export const databaseService = {
     }
   },
 
+  broadcastFCMNotification: async (params: {
+    role?: 'all' | 'clients' | 'workers' | 'travailleurs' | 'equipments' | 'equipements' | 'agencies' | 'agences' | 'admins';
+    title: string;
+    body: string;
+    imageUrl?: string;
+    url?: string;
+    data?: Record<string, string>;
+  }) => {
+    try {
+      if (!params.title) return;
+      const PLATFORM_LOGO = "https://i.supaimg.com/5cd01a23-e101-4415-9e28-ff02a617cd11.png";
+      const resolvedUrl = params.url || params.data?.url || '/?tab=notifications';
+
+      const payloadData: Record<string, string> = {
+        title: params.title,
+        body: params.body || '',
+        url: resolvedUrl,
+        icon: PLATFORM_LOGO,
+        targetRole: params.role || 'all',
+        ...(params.data || {})
+      };
+
+      const res = await fetch('/api/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: params.role || 'all',
+          title: params.title,
+          body: params.body || '',
+          imageUrl: params.imageUrl || PLATFORM_LOGO,
+          data: payloadData
+        })
+      });
+      return await res.json();
+    } catch (e) {
+      console.warn('Broadcast FCM dispatch failed:', e);
+      return { success: false, error: (e as any)?.message };
+    }
+  },
+
   sendNotificationToFirestore: async (phone: string, notification: Omit<Notification, 'id' | 'timestamp' | 'isRead'>) => {
     const sanitizedPhone = phone.replace(/\D/g, '');
     const cleanObject = (obj: any): any => {
@@ -2026,9 +2082,27 @@ export const databaseService = {
       let targetUrl = '/?tab=notifications';
       let targetTab = 'Notifications';
       let targetView = 'notifications';
+      let targetSub = '';
       let targetAction = '';
       let searchFilter = '';
       let amountStr = '';
+
+      const notifType = (notification as any).type || '';
+
+      // Support direct notification types
+      if (notifType === 'admin_inscription_alert') {
+        targetTab = 'admin';
+        targetSub = 'inscriptions';
+        targetUrl = '/?tab=admin&sub=inscriptions';
+      } else if (notifType === 'admin_service_request') {
+        targetTab = 'admin';
+        targetSub = 'requests';
+        targetUrl = '/?tab=admin&sub=requests';
+      } else if (notifType === 'admin_payment_alert') {
+        targetTab = 'admin';
+        targetSub = 'payments';
+        targetUrl = '/?tab=admin&sub=payments';
+      }
 
       // Recherche du premier bouton configuré dans la notification ou ses étapes
       const firstBtn = (notification.buttons && notification.buttons.length > 0)
@@ -2040,6 +2114,22 @@ export const databaseService = {
       if (firstBtn) {
         targetAction = firstBtn.action || '';
         switch (firstBtn.action) {
+          case 'inscriptions':
+            targetTab = 'admin';
+            targetSub = 'inscriptions';
+            targetUrl = '/?tab=admin&sub=inscriptions';
+            break;
+          case 'requests':
+          case 'demandes':
+            targetTab = 'admin';
+            targetSub = 'requests';
+            targetUrl = '/?tab=admin&sub=requests';
+            break;
+          case 'services_requests':
+            targetTab = 'Menu';
+            targetView = 'services_requests';
+            targetUrl = '/?tab=services_requests';
+            break;
           case 'qr_code':
             targetTab = 'MyQRCode';
             targetUrl = `/?tab=qr&phone=${sanitizedPhone}`;
@@ -2082,9 +2172,11 @@ export const databaseService = {
             targetUrl = '/?tab=location_hub&sub=appartement';
             break;
           default:
-            targetTab = 'Notifications';
-            targetView = 'notifications';
-            targetUrl = '/?tab=notifications';
+            if (!targetSub) {
+              targetTab = 'Notifications';
+              targetView = 'notifications';
+              targetUrl = '/?tab=notifications';
+            }
             break;
         }
       }
@@ -2096,17 +2188,18 @@ export const databaseService = {
         body: notification.message || '',
         imageUrl: notification.imageUrl,
         url: targetUrl,
-        type: 'platform_notification',
+        type: notifType || 'platform_notification',
         data: {
           targetTab,
           targetView,
+          targetSub,
           targetAction,
           searchFilter,
           amount: amountStr,
           url: targetUrl,
           title: notification.title || 'FILANT°225',
           body: notification.message || '',
-          type: 'platform_notification'
+          type: notifType || 'platform_notification'
         }
       });
     } catch (e) {
@@ -2836,6 +2929,30 @@ export const databaseService = {
       const phoneRaw = requestData.phone || '';
       const sanitizedPhone = phoneRaw.replace(/\D/g, '');
       const userId = requestData.userId || sanitizedPhone;
+
+      // Alert Admin with FCM push and deep link to Admin Service Requests tab
+      try {
+        const clientName = requestData.userName || requestData.name || 'Client';
+        const serviceTitle = requestData.serviceTitle || requestData.title || requestData.category || 'Demande de service';
+        const city = requestData.city || 'Non spécifiée';
+
+        const adminPayload = {
+          title: `🛠️ NOUVELLE DEMANDE : ${serviceTitle.toUpperCase()}`,
+          message: `Nouvelle demande soumise par ${clientName} (${sanitizedPhone}, ${city}).`,
+          type: 'admin_service_request',
+          serviceTitle,
+          userName: clientName,
+          userPhone: sanitizedPhone,
+          city,
+          timestamp: Date.now(),
+          buttons: [{ label: "Voir la demande", action: "requests" }]
+        };
+
+        databaseService.sendNotificationToFirestore(ADMIN_PHONE, adminPayload);
+        databaseService.addNotification(ADMIN_PHONE, adminPayload);
+      } catch (adminErr) {
+        console.warn("Could not notify admin of new service request:", adminErr);
+      }
 
       if (userId) {
         setTimeout(async () => {
