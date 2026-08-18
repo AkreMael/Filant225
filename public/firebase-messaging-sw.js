@@ -7,67 +7,102 @@ const firebaseConfig = {
   projectId: "filant225-base",
   storageBucket: "filant225-base.firebasestorage.app",
   messagingSenderId: "620102449526",
-  appId: "1:620102449526:web:998bf392f3dbab62682257",
-  measurementId: "G-88XZE34VHC"
+  appId: "1:620102449526:web:034bb2d244362260682257",
+  measurementId: "G-TC4M61VX2S"
 };
 
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
+// ====== GESTION DES MESSAGES EN ARRIÈRE-PLAN (BACKGROUND MESSAGES) ======
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  const notificationTitle = payload.notification?.title || payload.data?.title || 'Notification';
+  console.log('[firebase-messaging-sw.js] Message reçu en arrière-plan:', payload);
+
+  const notificationTitle = payload.notification?.title || payload.data?.title || 'FILANT°225';
+  const notificationBody = payload.notification?.body || payload.data?.body || payload.data?.message || 'Nouvelle notification reçue.';
+  const notificationIcon = payload.notification?.icon || payload.data?.icon || '/icon.svg';
+  const notificationImage = payload.notification?.image || payload.data?.image;
+
   const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || '',
-    icon: '/icon.svg',
+    body: notificationBody,
+    icon: notificationIcon,
     badge: '/icon.svg',
-    data: payload.data,
-    tag: 'background-notification',
-    renotify: true
+    image: notificationImage,
+    data: {
+      ...payload.data,
+      url: payload.data?.url || payload.data?.click_action || '/'
+    },
+    tag: payload.data?.tag || 'filant-background-notification',
+    renotify: true,
+    vibrate: [200, 100, 200],
+    actions: [
+      { action: 'open', title: 'Ouvrir' }
+    ]
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// ====== PWA CACHE IMPLEMENTATION FOR OFFLINE COMPATIBILITY ======
-const CACHE_NAME = 'filant225-pwa-cache-v2';
+// ====== GESTION DU CLIC SUR LA NOTIFICATION ======
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const urlToOpen = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Si une fenêtre est déjà ouverte, la mettre au premier plan
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Sinon ouvrir une nouvelle fenêtre vers l'application
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+
+// ====== CACHE PWA POUR COMPATIBILITÉ HORS-LIGNE ======
+const CACHE_NAME = 'filant225-pwa-cache-v3';
 const ASSETS_TO_PRECACHE = [
   '/',
   'index.html',
   'offline.html',
   'manifest.json',
+  'icon.svg',
   'icons/icon-72x72.png',
   'icons/icon-96x96.png',
   'icons/icon-128x128.png',
   'icons/icon-144x144.png',
   'icons/icon-192x192.png',
-  'icons/icon-512x512.png',
-  'screenshots/screenshot-mobile.png',
-  'screenshots/screenshot-desktop.png'
+  'icons/icon-512x512.png'
 ];
 
-// Installation event: cache Shell assets
+// Installation : mise en cache des éléments essentiels du shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
-        console.log('[Service Worker] Precaching shell assets');
+        console.log('[Service Worker] Mise en cache des ressources');
         return cache.addAll(ASSETS_TO_PRECACHE).catch(err => {
-          console.warn('[Service Worker] Non-blocking precaching warning:', err);
+          console.warn('[Service Worker] Avertissement non bloquant de pré-cache:', err);
         });
       })
       .then(() => self.skipWaiting())
   );
 });
 
-// Activation event: clear obsolete caches
+// Activation : suppression des anciens caches obsolètes
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
-            console.log('[Service Worker] Deleting obsolete cache:', cache);
+            console.log('[Service Worker] Suppression de l\'ancien cache:', cache);
             return caches.delete(cache);
           }
         })
@@ -76,12 +111,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event: Network-first caching strategy with dynamic fallbacks
+// Fetch : Stratégie Réseau en priorité avec fallback hors-ligne
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Bypass cache completely for dynamic resources
+  // Ignorer les requêtes dynamiques, API et Firebase
   if (
     request.method !== 'GET' ||
     url.pathname.includes('/api/') ||
@@ -93,13 +128,12 @@ self.addEventListener('fetch', (event) => {
     url.protocol === 'ws:' ||
     url.protocol === 'wss:'
   ) {
-    return; // Passthrough
+    return;
   }
 
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // Cache valid responses matching the application origin or local files
         if (response && response.status === 200 && (response.type === 'basic' || url.origin === self.location.origin)) {
           const responseToCache = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -109,12 +143,10 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => {
-        // Safe offline cache retrieval
         return caches.match(request).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // Redirect page navigation offline to the standard PWA offline page or shell
           if (request.headers.get('accept')?.includes('text/html') || request.mode === 'navigate') {
             return caches.match('/offline.html') || caches.match('/index.html') || caches.match('/');
           }
