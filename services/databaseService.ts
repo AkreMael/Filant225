@@ -1973,7 +1973,28 @@ export const databaseService = {
         timestamp: serverTimestamp(),
         isRead: false
       });
-      // Push notification API call removed as it depends on external backend
+      
+      // Déclenchement automatique de la notification push FCM côté serveur vers le token FCM de l'utilisateur
+      try {
+        fetch('/api/notifications/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: sanitizedPhone,
+            title: notification.title || 'FILANT°225',
+            body: notification.message || '',
+            imageUrl: notification.imageUrl,
+            data: {
+              title: notification.title || 'FILANT°225',
+              body: notification.message || '',
+              url: '/',
+              ...(notification.imageUrl ? { imageUrl: notification.imageUrl } : {})
+            }
+          })
+        }).catch(err => console.warn('Non-blocking server FCM trigger notice:', err));
+      } catch (fcmErr) {
+        console.warn('FCM dispatch failed silently:', fcmErr);
+      }
     } catch (e) {
       console.error("Error saving notification to Firestore:", e);
     }

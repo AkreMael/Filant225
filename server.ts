@@ -605,42 +605,150 @@ async function startServer() {
 
   app.post("/api/notifications/send", async (req, res) => {
     try {
-      const { phone, title, body } = req.body;
-      if (!phone || !title || !body) {
-        return res.status(400).json({ error: "Missing phone, title or body" });
+      const { phone, title, body, imageUrl, data, token: directToken } = req.body;
+      if ((!phone && !directToken) || !title) {
+        return res.status(400).json({ error: "Missing phone/token or title" });
       }
 
-      const sanitizedPhone = phone.replace(/\D/g, '');
-      const dbInstance = await getClientDb();
-      const userDoc = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
-      const userData = userDoc.data();
-      const fcmToken = userData?.fcmToken;
+      let fcmToken = directToken;
+      const sanitizedPhone = phone ? String(phone).replace(/\D/g, '') : '';
+
+      if (!fcmToken && sanitizedPhone) {
+        const dbInstance = await getClientDb();
+        // Check in Clients collection
+        const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
+        if (clientDocSnap.exists()) {
+          fcmToken = clientDocSnap.data()?.fcmToken;
+        }
+
+        // Fallback: Check Inscriptions collection if token not in Clients
+        if (!fcmToken) {
+          const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
+          if (inscDocSnap.exists()) {
+            fcmToken = inscDocSnap.data()?.fcmToken;
+          }
+        }
+      }
 
       if (!fcmToken) {
-        console.warn(`No FCM token found for user ${sanitizedPhone}`);
-        return res.status(404).json({ error: "User FCM token not found" });
+        console.warn(`No FCM token found for user ${sanitizedPhone || 'direct'}`);
+        return res.status(404).json({ error: "User FCM token not found in database" });
       }
 
-      const message = {
-        notification: {
-          title,
-          body,
-        },
+      const stringData: Record<string, string> = {
+        url: data?.url || '/',
+        title: String(title),
+        body: String(body || ''),
+        ...(imageUrl ? { image: String(imageUrl) } : {})
+      };
+
+      if (data && typeof data === 'object') {
+        Object.keys(data).forEach(k => {
+          stringData[k] = String(data[k]);
+        });
+      }
+
+      const message: any = {
         token: fcmToken,
+        notification: {
+          title: String(title),
+          body: String(body || ''),
+          ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+        },
+        data: stringData,
         webpush: {
           notification: {
             icon: '/icon.svg',
             badge: '/icon.svg',
+            ...(imageUrl ? { image: String(imageUrl) } : {})
+          },
+          fcmOptions: {
+            link: stringData.url || '/'
           }
         }
       };
 
       await admin.messaging().send(message);
-      console.log(`FCM notification sent to ${sanitizedPhone}`);
-      res.json({ success: true });
+      console.log(`FCM push notification sent successfully to ${sanitizedPhone || 'token'}`);
+      res.json({ success: true, token: fcmToken });
     } catch (error: any) {
       console.error("Error sending FCM notification:", error);
       res.status(500).json({ error: "Failed to send notification", details: error.message });
+    }
+  });
+
+  // Batch FCM sending endpoint for sending to multiple selected users from Admin space
+  app.post("/api/notifications/send-multiple", async (req, res) => {
+    try {
+      const { phones, title, body, imageUrl, data } = req.body;
+      if (!Array.isArray(phones) || phones.length === 0 || !title) {
+        return res.status(400).json({ error: "Missing phones array or title" });
+      }
+
+      const dbInstance = await getClientDb();
+      const results: { phone: string; success: boolean; error?: string }[] = [];
+
+      for (const rawPhone of phones) {
+        const sanitizedPhone = String(rawPhone).replace(/\D/g, '');
+        try {
+          // Check token in Clients
+          let fcmToken: string | undefined;
+          const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
+          if (clientDocSnap.exists()) {
+            fcmToken = clientDocSnap.data()?.fcmToken;
+          }
+          if (!fcmToken) {
+            const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
+            if (inscDocSnap.exists()) {
+              fcmToken = inscDocSnap.data()?.fcmToken;
+            }
+          }
+
+          if (!fcmToken) {
+            results.push({ phone: sanitizedPhone, success: false, error: "No FCM token" });
+            continue;
+          }
+
+          const stringData: Record<string, string> = {
+            url: data?.url || '/',
+            title: String(title),
+            body: String(body || ''),
+            ...(imageUrl ? { image: String(imageUrl) } : {})
+          };
+
+          const message: any = {
+            token: fcmToken,
+            notification: {
+              title: String(title),
+              body: String(body || ''),
+              ...(imageUrl ? { imageUrl: String(imageUrl) } : {})
+            },
+            data: stringData,
+            webpush: {
+              notification: {
+                icon: '/icon.svg',
+                badge: '/icon.svg',
+                ...(imageUrl ? { image: String(imageUrl) } : {})
+              },
+              fcmOptions: {
+                link: stringData.url || '/'
+              }
+            }
+          };
+
+          await admin.messaging().send(message);
+          results.push({ phone: sanitizedPhone, success: true });
+        } catch (itemErr: any) {
+          results.push({ phone: sanitizedPhone, success: false, error: itemErr.message });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      console.log(`Bulk FCM push complete: ${successCount}/${phones.length} sent successfully.`);
+      res.json({ success: true, count: successCount, total: phones.length, results });
+    } catch (error: any) {
+      console.error("Error in bulk FCM send:", error);
+      res.status(500).json({ error: "Failed to send bulk notifications", details: error.message });
     }
   });
 
