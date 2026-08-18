@@ -995,6 +995,238 @@ async function startServer() {
     }
   });
 
+  // ==========================================
+  // GOOGLE MAPS PLATFORM & LIVE TRACKING APIS
+  // ==========================================
+
+  // 1. Address Validation API Endpoint
+  app.post("/api/maps/validate-address", async (req, res) => {
+    try {
+      const { address, regionCode = "CI" } = req.body;
+      if (!address || typeof address !== "string") {
+        return res.status(400).json({ error: "Address is required" });
+      }
+
+      const apiKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY;
+      if (!apiKey) {
+        // Fallback geocoding response if API key is in setup mode
+        return res.json({
+          success: true,
+          isValid: true,
+          formattedAddress: address,
+          regionCode,
+          source: "local-fallback",
+          geocode: {
+            location: {
+              latitude: 5.3600,
+              longitude: -4.0083
+            }
+          }
+        });
+      }
+
+      const response = await fetch(`https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: {
+            regionCode: regionCode,
+            addressLines: [address]
+          },
+          enableUspsCass: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn("Address Validation API response error:", errorText);
+        return res.json({
+          success: true,
+          isValid: true,
+          formattedAddress: address,
+          regionCode,
+          source: "fallback-on-error"
+        });
+      }
+
+      const result = await response.json();
+      const verdict = result?.result?.verdict || {};
+      const postalAddress = result?.result?.address?.postalAddress || {};
+      const geocode = result?.result?.geocode || {};
+
+      res.json({
+        success: true,
+        isValid: verdict.addressComplete || !verdict.hasUnconfirmedComponents,
+        verdict,
+        formattedAddress: result?.result?.address?.formattedAddress || address,
+        postalAddress,
+        geocode,
+        source: "google-address-validation"
+      });
+    } catch (error: any) {
+      console.error("Error validating address:", error);
+      res.status(500).json({ error: "Address validation failed", details: error.message });
+    }
+  });
+
+  // 2. Google Maps Navigation / Routes API (computeRoutes)
+  app.post("/api/maps/compute-route", async (req, res) => {
+    try {
+      const { origin, destination, travelMode = "DRIVE" } = req.body;
+      if (!origin || !destination) {
+        return res.status(400).json({ error: "Origin and destination are required" });
+      }
+
+      const apiKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.VITE_GOOGLE_MAPS_PLATFORM_KEY;
+      if (!apiKey) {
+        return res.json({
+          success: true,
+          source: "simulated-route",
+          route: {
+            distanceMeters: 4500,
+            duration: "1200s",
+            formattedDistance: "4.5 km",
+            formattedDuration: "20 min"
+          }
+        });
+      }
+
+      // Convert origin and destination to proper format for Routes API
+      const formatWayPoint = (wp: any) => {
+        if (typeof wp === "string") {
+          return { address: wp };
+        }
+        if (wp.lat !== undefined && wp.lng !== undefined) {
+          return {
+            location: {
+              latLng: {
+                latitude: Number(wp.lat),
+                longitude: Number(wp.lng)
+              }
+            }
+          };
+        }
+        return { address: String(wp) };
+      };
+
+      const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.viewport"
+        },
+        body: JSON.stringify({
+          origin: formatWayPoint(origin),
+          destination: formatWayPoint(destination),
+          travelMode: travelMode === "DRIVE" ? "DRIVE" : travelMode,
+          routingPreference: "TRAFFIC_AWARE",
+          computeAlternativeRoutes: false,
+          languageCode: "fr-FR",
+          units: "METRIC"
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn("Routes API computeRoutes error:", errorText);
+        return res.json({
+          success: true,
+          source: "fallback-route",
+          route: {
+            distanceMeters: 5000,
+            duration: "900s",
+            formattedDistance: "5.0 km",
+            formattedDuration: "15 min"
+          }
+        });
+      }
+
+      const data = await response.json();
+      const firstRoute = data?.routes?.[0];
+
+      if (firstRoute) {
+        const distanceKm = (firstRoute.distanceMeters || 0) / 1000;
+        const durationSec = parseInt(firstRoute.duration?.replace("s", "") || "0", 10);
+        const durationMin = Math.ceil(durationSec / 60);
+
+        res.json({
+          success: true,
+          source: "google-routes-api",
+          route: {
+            ...firstRoute,
+            distanceKm: Number(distanceKm.toFixed(1)),
+            formattedDistance: distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m` : `${distanceKm.toFixed(1)} km`,
+            durationMinutes: durationMin,
+            formattedDuration: durationMin > 60 ? `${Math.floor(durationMin / 60)} h ${durationMin % 60} min` : `${durationMin} min`,
+            encodedPolyline: firstRoute.polyline?.encodedPolyline
+          }
+        });
+      } else {
+        res.json({ success: false, message: "No route found" });
+      }
+    } catch (error: any) {
+      console.error("Error computing route:", error);
+      res.status(500).json({ error: "Route computation failed", details: error.message });
+    }
+  });
+
+  // 3. Worker Live Location Update Endpoint (Firestore synchronized)
+  app.post("/api/workers/live-location", async (req, res) => {
+    try {
+      const { 
+        workerId, 
+        workerName, 
+        workerPhone, 
+        lat, 
+        lng, 
+        heading = 0, 
+        speed = 0, 
+        accuracy = 10,
+        status = "disponible",
+        currentAddress = "",
+        city = "",
+        isLiveTracking = true,
+        category = ""
+      } = req.body;
+
+      if (!workerId || lat === undefined || lng === undefined) {
+        return res.status(400).json({ error: "workerId, lat, and lng are required" });
+      }
+
+      const dbInstance = await getClientDb();
+      const workerLocRef = clientDoc(dbInstance, "WorkerLiveLocations", String(workerId));
+
+      const payload = {
+        workerId: String(workerId),
+        workerName: workerName || "Travailleur FILANT°225",
+        workerPhone: workerPhone || "",
+        lat: Number(lat),
+        lng: Number(lng),
+        heading: Number(heading),
+        speed: Number(speed),
+        accuracy: Number(accuracy),
+        status,
+        currentAddress,
+        city,
+        category,
+        isLiveTracking: Boolean(isLiveTracking),
+        lastUpdated: Date.now(),
+        updatedAt: clientServerTimestamp()
+      };
+
+      await clientUpdateDoc(workerLocRef, payload).catch(async () => {
+        const { setDoc: clientSetDoc } = await import("firebase/firestore");
+        await clientSetDoc(workerLocRef, payload);
+      });
+
+      res.json({ success: true, location: payload });
+    } catch (error: any) {
+      console.error("Error updating worker live location:", error);
+      res.status(500).json({ error: "Failed to update location", details: error.message });
+    }
+  });
+
   // Endpoint to generate beautiful professional sharing cards with Jimp
   app.get("/api/share-image", async (req, res) => {
     try {
