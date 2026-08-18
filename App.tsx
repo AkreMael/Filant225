@@ -1302,24 +1302,13 @@ const App: React.FC = () => {
         const latest = unread[0];
         if (latest.id !== lastNotificationId) {
           setLastNotificationId(latest.id);
-          // Only open pop-up window on client/user views.
-          // On the administrator space, notifications stay in the designated frame and messaging without automatic popup window.
-          const isCurrentlyAdmin = shouldShowAdminDashboard || activeTab === Tab.Admin || isAdmin(currentUser);
-          if (!isCurrentlyAdmin) {
-            setActiveNotificationModal(latest);
-          }
+          setActiveNotificationModal(latest);
         }
       }
     });
     
     return () => unsubscribe();
-  }, [currentUser?.phone, isAuthReady, lastNotificationId, shouldShowAdminDashboard, activeTab, currentUser]);
-
-  useEffect(() => {
-    if (shouldShowAdminDashboard || activeTab === Tab.Admin || isAdmin(currentUser)) {
-      setActiveNotificationModal(null);
-    }
-  }, [shouldShowAdminDashboard, activeTab, currentUser]);
+  }, [currentUser?.phone, isAuthReady, lastNotificationId]);
 
 // Card data and role sync logic removed
 
@@ -2679,7 +2668,7 @@ const App: React.FC = () => {
             )}
 
             <AnimatePresence>
-              {!shouldShowAdminDashboard && activeTab !== Tab.Admin && !isAdmin(currentUser) && activeNotificationModal && (() => {
+              {activeNotificationModal && (() => {
                 const pages = [
                   { 
                     message: activeNotificationModal.message, 
