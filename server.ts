@@ -87,6 +87,8 @@ const getGeminiClient = () => {
   });
 };
 
+let globalViteInstance: any = null;
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -679,34 +681,25 @@ async function startServer() {
 
       if (!fcmToken && sanitizedPhone) {
         const dbInstance = await getClientDb();
-        // Check in Clients collection
-        const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
-        if (clientDocSnap.exists() && clientDocSnap.data()?.fcmToken) {
-          fcmToken = clientDocSnap.data()?.fcmToken;
-        }
-
-        // Fallback 1: Check Inscriptions collection if token not in Clients
-        if (!fcmToken) {
-          const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
-          if (inscDocSnap.exists() && inscDocSnap.data()?.fcmToken) {
-            fcmToken = inscDocSnap.data()?.fcmToken;
-          }
-        }
-
-        // Fallback 2: Check FCMTokens collection
-        if (!fcmToken) {
-          const fcmDocSnap = await clientGetDoc(clientDoc(dbInstance, "FCMTokens", sanitizedPhone));
-          if (fcmDocSnap.exists() && fcmDocSnap.data()?.fcmToken) {
-            fcmToken = fcmDocSnap.data()?.fcmToken;
-          }
-        }
-
-        // Fallback 3: Check Users collection
-        if (!fcmToken) {
-          const userDocSnap = await clientGetDoc(clientDoc(dbInstance, "Users", sanitizedPhone));
-          if (userDocSnap.exists() && userDocSnap.data()?.fcmToken) {
-            fcmToken = userDocSnap.data()?.fcmToken;
-          }
+        const collectionsToCheck = [
+          "Clients",
+          "Inscriptions",
+          "FCMTokens",
+          "Users",
+          "Travailleurs",
+          "Agences immobilières",
+          "Équipements",
+          "Entreprises",
+          "Admin"
+        ];
+        for (const col of collectionsToCheck) {
+          try {
+            const docSnap = await clientGetDoc(clientDoc(dbInstance, col, sanitizedPhone));
+            if (docSnap.exists() && docSnap.data()?.fcmToken) {
+              fcmToken = docSnap.data()?.fcmToken;
+              break;
+            }
+          } catch (e) {}
         }
       }
 
@@ -800,29 +793,26 @@ async function startServer() {
       for (const rawPhone of phones) {
         const sanitizedPhone = String(rawPhone).replace(/\D/g, '');
         try {
-          // Check token in Clients
+          const collectionsToCheck = [
+            "Clients",
+            "Inscriptions",
+            "FCMTokens",
+            "Users",
+            "Travailleurs",
+            "Agences immobilières",
+            "Équipements",
+            "Entreprises",
+            "Admin"
+          ];
           let fcmToken: string | undefined;
-          const clientDocSnap = await clientGetDoc(clientDoc(dbInstance, "Clients", sanitizedPhone));
-          if (clientDocSnap.exists() && clientDocSnap.data()?.fcmToken) {
-            fcmToken = clientDocSnap.data()?.fcmToken;
-          }
-          if (!fcmToken) {
-            const inscDocSnap = await clientGetDoc(clientDoc(dbInstance, "Inscriptions", sanitizedPhone));
-            if (inscDocSnap.exists() && inscDocSnap.data()?.fcmToken) {
-              fcmToken = inscDocSnap.data()?.fcmToken;
-            }
-          }
-          if (!fcmToken) {
-            const fcmDocSnap = await clientGetDoc(clientDoc(dbInstance, "FCMTokens", sanitizedPhone));
-            if (fcmDocSnap.exists() && fcmDocSnap.data()?.fcmToken) {
-              fcmToken = fcmDocSnap.data()?.fcmToken;
-            }
-          }
-          if (!fcmToken) {
-            const userDocSnap = await clientGetDoc(clientDoc(dbInstance, "Users", sanitizedPhone));
-            if (userDocSnap.exists() && userDocSnap.data()?.fcmToken) {
-              fcmToken = userDocSnap.data()?.fcmToken;
-            }
+          for (const col of collectionsToCheck) {
+            try {
+              const docSnap = await clientGetDoc(clientDoc(dbInstance, col, sanitizedPhone));
+              if (docSnap.exists() && docSnap.data()?.fcmToken) {
+                fcmToken = docSnap.data()?.fcmToken;
+                break;
+              }
+            } catch (e) {}
           }
 
           if (!fcmToken) {
@@ -919,32 +909,40 @@ async function startServer() {
       const dbInstance = await getClientDb();
       const targetTokens = new Map<string, string>(); // token -> phone/id
 
-      const collectTokensFromSnap = (snap: any, roleFilter?: string) => {
+      const collectTokensFromSnap = (snap: any, roleFilter?: string, defaultRole?: string) => {
         snap.forEach((d: any) => {
           const docData = d.data();
           const token = docData?.fcmToken;
           if (token && typeof token === 'string' && token.length > 10) {
+            const profileType = docData.profileType || defaultRole || '';
+            const roleVal = docData.role || '';
+            const docId = String(d.id || '');
+
             if (!roleFilter || roleFilter === 'all') {
-              targetTokens.set(token, d.id);
+              targetTokens.set(token, docId);
             } else if (roleFilter === 'workers' || roleFilter === 'travailleurs') {
-              if (docData.profileType === 'Travailleur' || docData.job || docData.role === 'worker') {
-                targetTokens.set(token, d.id);
+              if (profileType === 'Travailleur' || docData.job || roleVal === 'worker' || roleVal === 'Travailleur' || defaultRole === 'Travailleur') {
+                targetTokens.set(token, docId);
               }
             } else if (roleFilter === 'equipments' || roleFilter === 'equipements') {
-              if (docData.profileType === 'Propriétaire' || docData.equipmentType || docData.role === 'equipment') {
-                targetTokens.set(token, d.id);
+              if (profileType === 'Propriétaire' || profileType === 'Equipement' || profileType === 'Équipement' || docData.equipmentType || roleVal === 'equipment' || defaultRole === 'Équipements') {
+                targetTokens.set(token, docId);
               }
             } else if (roleFilter === 'agencies' || roleFilter === 'agences') {
-              if (docData.profileType === 'Agence' || docData.profileType === 'Agence immobilière' || docData.agencyName || docData.role === 'agency') {
-                targetTokens.set(token, d.id);
+              if (profileType === 'Agence' || profileType === 'Agence immobilière' || docData.agencyName || roleVal === 'agency' || defaultRole === 'Agences immobilières') {
+                targetTokens.set(token, docId);
+              }
+            } else if (roleFilter === 'enterprises' || roleFilter === 'entreprises') {
+              if (profileType === 'Entreprise' || docData.companyName || roleVal === 'company' || defaultRole === 'Entreprises') {
+                targetTokens.set(token, docId);
               }
             } else if (roleFilter === 'clients') {
-              if (docData.role === 'client' || !docData.profileType) {
-                targetTokens.set(token, d.id);
+              if (roleVal === 'client' || roleVal === 'Client' || (!profileType && !docData.job && !docData.equipmentType && !docData.agencyName)) {
+                targetTokens.set(token, docId);
               }
-            } else if (roleFilter === 'admins') {
-              if (d.id === '0701020304' || d.id === '0719875153' || docData.role === 'admin') {
-                targetTokens.set(token, d.id);
+            } else if (roleFilter === 'admins' || roleFilter === 'admin') {
+              if (docId === '0705052632' || docId === '0701020304' || docId === '0719875153' || roleVal === 'Admin 225' || roleVal === 'admin' || roleVal === 'Admin' || defaultRole === 'Admin') {
+                targetTokens.set(token, docId);
               }
             }
           }
@@ -971,6 +969,31 @@ async function startServer() {
       } catch (err) {
         console.warn("Could not query FCMTokens for broadcast:", err);
       }
+
+      try {
+        const travSnap = await clientGetDocs(clientCollection(dbInstance, "Travailleurs"));
+        collectTokensFromSnap(travSnap, role, "Travailleur");
+      } catch (err) {}
+
+      try {
+        const eqSnap = await clientGetDocs(clientCollection(dbInstance, "Équipements"));
+        collectTokensFromSnap(eqSnap, role, "Équipements");
+      } catch (err) {}
+
+      try {
+        const agSnap = await clientGetDocs(clientCollection(dbInstance, "Agences immobilières"));
+        collectTokensFromSnap(agSnap, role, "Agences immobilières");
+      } catch (err) {}
+
+      try {
+        const entSnap = await clientGetDocs(clientCollection(dbInstance, "Entreprises"));
+        collectTokensFromSnap(entSnap, role, "Entreprises");
+      } catch (err) {}
+
+      try {
+        const admSnap = await clientGetDocs(clientCollection(dbInstance, "Admin"));
+        collectTokensFromSnap(admSnap, role, "Admin");
+      } catch (err) {}
 
       const tokenList = Array.from(targetTokens.keys());
       if (tokenList.length === 0) {

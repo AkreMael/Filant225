@@ -568,12 +568,35 @@ export const databaseService = {
       const clientRef = doc(db, 'Clients', sanitizedPhone);
       const inscRef = doc(db, 'Inscriptions', sanitizedPhone);
       const fcmRef = doc(db, 'FCMTokens', sanitizedPhone);
+      const travRef = doc(db, 'Travailleurs', sanitizedPhone);
+      const agRef = doc(db, 'Agences immobilières', sanitizedPhone);
+      const eqRef = doc(db, 'Équipements', sanitizedPhone);
+      const entRef = doc(db, 'Entreprises', sanitizedPhone);
+      const adminRef = doc(db, 'Admin', sanitizedPhone);
 
-      await Promise.allSettled([
+      const updatePromises: Promise<any>[] = [
         setDoc(clientRef, tokenPayload, { merge: true }),
         setDoc(inscRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }),
         setDoc(fcmRef, tokenPayload, { merge: true })
-      ]);
+      ];
+
+      if (user.role === 'Travailleur' || (user as any).job) {
+        updatePromises.push(setDoc(travRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }));
+      }
+      if (user.role === 'Agence immobilière' || (user as any).agencyName) {
+        updatePromises.push(setDoc(agRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }));
+      }
+      if (user.role === 'Propriétaire' || (user as any).equipmentType) {
+        updatePromises.push(setDoc(eqRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }));
+      }
+      if (user.role === 'Entreprise' || (user as any).companyName) {
+        updatePromises.push(setDoc(entRef, { fcmToken: token, updatedAt: serverTimestamp() }, { merge: true }));
+      }
+      if (sanitizedPhone === '0705052632' || sanitizedPhone === '0701020304' || sanitizedPhone === '0719875153' || user.role === 'Admin 225' || user.role === 'admin' || user.role === 'Admin') {
+        updatePromises.push(setDoc(adminRef, tokenPayload, { merge: true }));
+      }
+
+      await Promise.allSettled(updatePromises);
       console.log("FCM Token saved across collections for:", user.name || sanitizedPhone);
     } catch (e) {
       console.error("Error saving FCM token to Firestore:", e);

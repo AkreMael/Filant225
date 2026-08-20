@@ -1219,6 +1219,15 @@ const App: React.FC = () => {
     window.addEventListener('deep-link-navigation' as any, handleDeepLinkEvent as any);
     window.addEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
 
+    // Process initial URL if opened via notification link (e.g. from background / closed state)
+    if (window.location.search) {
+      try {
+        handleDeepLink({ url: window.location.href });
+      } catch (err) {
+        console.warn("Initial URL deep link parse notice:", err);
+      }
+    }
+
     return () => {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.removeEventListener('message', handleSWMessage);
@@ -1303,9 +1312,9 @@ const App: React.FC = () => {
         if (latest.id !== lastNotificationId) {
           setLastNotificationId(latest.id);
           // Only open pop-up window on client/user views.
-          // On the administrator space, notifications stay in the designated frame and messaging without automatic popup window.
-          const isCurrentlyAdmin = shouldShowAdminDashboard || activeTab === Tab.Admin || isAdmin(currentUser);
-          if (!isCurrentlyAdmin) {
+          // On the administrator space, incoming push notifications are strictly recorded in the message stream and dashboard without opening a modal window.
+          const isCurrentlyAdmin = isAdmin(currentUser) || shouldShowAdminDashboard || activeTab === Tab.Admin;
+          if (!isCurrentlyAdmin && !isAdmin(currentUser)) {
             setActiveNotificationModal(latest);
           }
         }
@@ -1316,7 +1325,7 @@ const App: React.FC = () => {
   }, [currentUser?.phone, isAuthReady, lastNotificationId, shouldShowAdminDashboard, activeTab, currentUser]);
 
   useEffect(() => {
-    if (shouldShowAdminDashboard || activeTab === Tab.Admin || isAdmin(currentUser)) {
+    if (isAdmin(currentUser) || shouldShowAdminDashboard || activeTab === Tab.Admin) {
       setActiveNotificationModal(null);
     }
   }, [shouldShowAdminDashboard, activeTab, currentUser]);
