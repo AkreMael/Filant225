@@ -24,6 +24,7 @@ interface ChatMessage {
   audioUrl?: string;
   audioDuration?: number;
   transcription?: string;
+  audioFileId?: string;
   isUploading?: boolean;
 }
 
@@ -274,6 +275,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       audioUrl: localAudioUrl,
       audioDuration: durationSeconds,
       transcription: liveTranscription || '',
+      audioFileId: msgId,
       timestamp: Date.now(),
       type: 'voice',
       isUploading: true
@@ -284,18 +286,18 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       return [...prev, optimisticMessage];
     });
 
-    // 0. Store locally in device storage (IndexedDB) immediately for local playback
     try {
-      await localAudioStorage.saveAudio(msgId, audioBlob, localAudioUrl);
-    } catch (localSaveErr) {
-      console.warn('[Chat] Local storage initial save notice:', localSaveErr);
-    }
+      // 1. Save audio locally to device's IndexedDB immediately for instant offline playback
+      try {
+        await localAudioStorage.saveLocalAudio(msgId, audioBlob, durationSeconds);
+      } catch (localErr) {
+        console.warn('[Chat] Local IndexedDB save warning:', localErr);
+      }
 
-    try {
-      // 1. Convert to Base64
+      // 2. Convert to Base64 for AI transcription and server storage
       const audioBase64 = await audioService.blobToBase64(audioBlob);
 
-      // 2. Transcribe voice in parallel with Gemini API
+      // 3. Transcribe voice in parallel with Gemini API
       let finalTranscription = liveTranscription?.trim() || '';
       try {
         const aiTranscription = await audioService.transcribeAudio(audioBase64, audioBlob.type || 'audio/webm');
@@ -306,35 +308,32 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         console.warn('[Chat] AI Transcription error:', transcribeErr);
       }
 
-      // 3. Upload audio file to server backend only (NO Firebase Storage used)
-      let permanentUrl = localAudioUrl;
+      // 4. Save audio to local server file storage (No Firebase Storage)
+      let serverAudioUrl = '';
       try {
         const res = await fetch('/api/upload-base64', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             base64: audioBase64,
-            filename: `${Date.now()}_${msgId}.webm`
+            filename: `voice_${msgId}.webm`
           })
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.url) {
-            permanentUrl = data.url;
-            // Also link the permanent server URL to the local audio cache
-            await localAudioStorage.saveAudio(msgId, audioBlob, permanentUrl);
-          }
+          if (data.url) serverAudioUrl = data.url;
         }
       } catch (uploadErr) {
-        console.warn('[Chat] Server upload notice, keeping local audio link:', uploadErr);
+        console.warn('[Chat] Server audio upload error:', uploadErr);
       }
 
-      // 4. Final message object
+      // 5. Final message object - Only metadata & server URL stored in database
       const finalMessage: ChatMessage = {
         id: msgId,
         sender: sender,
         text: finalTranscription ? `🎤 ${finalTranscription}` : '🎤 Message vocal',
-        audioUrl: permanentUrl,
+        audioUrl: serverAudioUrl || localAudioUrl,
+        audioFileId: msgId,
         audioDuration: durationSeconds,
         transcription: finalTranscription,
         type: 'voice',
@@ -345,7 +344,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       // Update optimistic state
       setMessages(prev => prev.map(m => m.id === msgId ? finalMessage : m));
 
-      // Save metadata to Firebase Firestore & dispatch push notifications
+      // 6. Save metadata to Firestore (No binary audio in Firebase Storage)
       await databaseService.savePrivateChatMessage(chatUserId, finalMessage);
     } catch (error) {
       console.error('[Chat] Error processing voice recording:', error);
@@ -543,12 +542,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                     >
                       {msg.audioUrl ? (
                         <VoiceMessagePlayer 
-                          messageId={messageId}
                           audioUrl={msg.audioUrl} 
                           audioDuration={msg.audioDuration} 
                           transcription={msg.transcription} 
                           isMe={isMe} 
                           timestamp={msg.timestamp} 
+                          audioFileId={msg.audioFileId}
+                          messageId={messageId}
                         />
                       ) : msg.isUploading ? (
                         <div className="flex items-center gap-3 py-1.5 px-0.5 min-w-[200px]">

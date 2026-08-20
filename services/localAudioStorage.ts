@@ -1,24 +1,24 @@
 /**
- * FILANT°225 - Service de stockage audio local sur l'appareil (IndexedDB)
- * 
- * Permet de conserver les fichiers vocaux localement sur le téléphone ou le navigateur
- * sans solliciter Firebase Storage. 
- * Firestore synchronise uniquement les métadonnées (texte, durée, date, transcription, URL relative).
+ * Local Audio Storage Service for FILANT°225
+ * Uses IndexedDB to persist voice notes locally on the device (phone/browser).
+ * Audio files are stored offline in the browser's IndexedDB database,
+ * allowing instant local playback without Firebase Storage.
  */
 
-const DB_NAME = 'filant_local_audio_db';
+const DB_NAME = 'filant_voice_audio_db';
 const DB_VERSION = 1;
-const STORE_NAME = 'voice_recordings';
+const STORE_NAME = 'voice_audios';
 
 interface StoredVoiceRecord {
   id: string;
   blob: Blob;
-  audioUrl?: string;
-  savedAt: number;
-  mimeType?: string;
+  mimeType: string;
+  duration?: number;
+  timestamp: number;
+  size: number;
 }
 
-class LocalAudioStorage {
+class LocalAudioStorageService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private objectUrlCache: Map<string, string> = new Map();
 
@@ -27,7 +27,7 @@ class LocalAudioStorage {
 
     this.dbPromise = new Promise((resolve, reject) => {
       if (typeof window === 'undefined' || !window.indexedDB) {
-        reject(new Error("IndexedDB n'est pas supporté par cet appareil."));
+        reject(new Error("IndexedDB n'est pas disponible sur cet appareil"));
         return;
       }
 
@@ -36,18 +36,18 @@ class LocalAudioStorage {
       request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-          store.createIndex('audioUrl', 'audioUrl', { unique: false });
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         }
       };
 
-      request.onsuccess = () => {
-        resolve(request.result);
+      request.onsuccess = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        resolve(db);
       };
 
-      request.onerror = () => {
-        console.error("[LocalAudioStorage] Erreur d'ouverture IndexedDB:", request.error);
-        reject(request.error);
+      request.onerror = (event) => {
+        console.error("[LocalAudioStorage] Erreur ouverture IndexedDB:", (event.target as IDBOpenDBRequest).error);
+        reject((event.target as IDBOpenDBRequest).error);
       };
     });
 
@@ -55,163 +55,156 @@ class LocalAudioStorage {
   }
 
   /**
-   * Sauvegarde un Blob audio localement sur le téléphone
+   * Sauvegarde un Blob audio localement sur l'appareil (IndexedDB)
    */
-  async saveAudio(messageId: string, blob: Blob, audioUrl?: string): Promise<void> {
+  async saveLocalAudio(id: string, blob: Blob, duration?: number): Promise<string> {
     try {
       const db = await this.getDB();
       const record: StoredVoiceRecord = {
-        id: messageId,
-        blob: blob,
-        audioUrl: audioUrl || '',
-        savedAt: Date.now(),
-        mimeType: blob.type || 'audio/webm'
+        id,
+        blob,
+        mimeType: blob.type || 'audio/webm',
+        duration: duration || 0,
+        timestamp: Date.now(),
+        size: blob.size
       };
 
       await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
         const req = store.put(record);
 
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
       });
 
-      // Mettre en cache l'Object URL local
-      const oldUrl = this.objectUrlCache.get(messageId);
-      if (oldUrl) {
-        try { URL.revokeObjectURL(oldUrl); } catch (e) {}
-      }
-      this.objectUrlCache.set(messageId, URL.createObjectURL(blob));
+      // Crée une URL d'objet locale et la met en cache
+      const objectUrl = URL.createObjectURL(blob);
+      this.objectUrlCache.set(id, objectUrl);
+      return objectUrl;
     } catch (err) {
-      console.warn(`[LocalAudioStorage] Erreur sauvegarde locale du vocal (${messageId}):`, err);
+      console.warn("[LocalAudioStorage] Échec de sauvegarde locale:", err);
+      // Fallback vers ObjectURL direct en mémoire
+      const objectUrl = URL.createObjectURL(blob);
+      this.objectUrlCache.set(id, objectUrl);
+      return objectUrl;
     }
   }
 
   /**
    * Récupère le Blob audio stocké localement
    */
-  async getAudioBlob(messageId: string, audioUrl?: string): Promise<Blob | null> {
+  async getLocalAudioBlob(id: string): Promise<Blob | null> {
     try {
       const db = await this.getDB();
+      return new Promise<Blob | null>((resolve, reject) => {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const req = store.get(id);
 
-      // Recherche par messageId
-      const recordById = await new Promise<StoredVoiceRecord | null>((resolve) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.get(messageId);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => resolve(null);
-      });
+        req.onsuccess = () => {
+          const result = req.result as StoredVoiceRecord | undefined;
+          if (result && result.blob) {
+            resolve(result.blob);
+          } else {
+            resolve(null);
+          }
+        };
 
-      if (recordById && recordById.blob) {
-        return recordById.blob;
-      }
-
-      // Si pas trouvé et qu'on a l'URL audio, chercher via l'index
-      if (audioUrl) {
-        const recordByUrl = await new Promise<StoredVoiceRecord | null>((resolve) => {
-          const tx = db.transaction(STORE_NAME, 'readonly');
-          const store = tx.objectStore(STORE_NAME);
-          const index = store.index('audioUrl');
-          const req = index.get(audioUrl);
-          req.onsuccess = () => resolve(req.result || null);
-          req.onerror = () => resolve(null);
-        });
-
-        if (recordByUrl && recordByUrl.blob) {
-          return recordByUrl.blob;
-        }
-      }
-
-      return null;
-    } catch (err) {
-      console.warn(`[LocalAudioStorage] Erreur lecture locale (${messageId}):`, err);
-      return null;
-    }
-  }
-
-  /**
-   * Vérifie si le fichier vocal est déjà disponible dans la mémoire de l'appareil
-   */
-  async isCachedLocally(messageId: string, audioUrl?: string): Promise<boolean> {
-    if (this.objectUrlCache.has(messageId)) return true;
-    const blob = await this.getAudioBlob(messageId, audioUrl);
-    return blob !== null;
-  }
-
-  /**
-   * Obtient un Object URL prêt pour la lecture HTML5 Audio depuis le stockage local
-   */
-  async getLocalPlayableUrl(messageId: string, audioUrl?: string): Promise<string | null> {
-    if (this.objectUrlCache.has(messageId)) {
-      return this.objectUrlCache.get(messageId)!;
-    }
-
-    const blob = await this.getAudioBlob(messageId, audioUrl);
-    if (!blob) return null;
-
-    const url = URL.createObjectURL(blob);
-    this.objectUrlCache.set(messageId, url);
-    return url;
-  }
-
-  /**
-   * Télécharge le fichier audio depuis le serveur et le stocke immédiatement sur l'appareil
-   */
-  async downloadAndStoreLocally(
-    messageId: string, 
-    remoteUrl: string, 
-    onProgress?: (percent: number) => void
-  ): Promise<{ blob: Blob; localUrl: string } | null> {
-    try {
-      if (onProgress) onProgress(15);
-      
-      const response = await fetch(remoteUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} impossible de télécharger le vocal.`);
-      }
-
-      if (onProgress) onProgress(60);
-      const blob = await response.blob();
-      
-      if (onProgress) onProgress(85);
-      await this.saveAudio(messageId, blob, remoteUrl);
-
-      const localUrl = this.objectUrlCache.get(messageId) || URL.createObjectURL(blob);
-      if (onProgress) onProgress(100);
-
-      return { blob, localUrl };
-    } catch (err) {
-      console.error(`[LocalAudioStorage] Échec du téléchargement du vocal (${messageId}):`, err);
-      return null;
-    }
-  }
-
-  /**
-   * Supprime un fichier audio du stockage local
-   */
-  async removeAudio(messageId: string): Promise<void> {
-    try {
-      const db = await this.getDB();
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.delete(messageId);
-        req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
       });
+    } catch (err) {
+      console.warn("[LocalAudioStorage] Erreur lecture locale:", err);
+      return null;
+    }
+  }
 
-      const cached = this.objectUrlCache.get(messageId);
-      if (cached) {
-        try { URL.revokeObjectURL(cached); } catch (e) {}
-        this.objectUrlCache.delete(messageId);
+  /**
+   * Vérifie si le fichier vocal existe déjà dans le stockage local de l'appareil
+   */
+  async hasLocalAudio(id: string): Promise<boolean> {
+    if (this.objectUrlCache.has(id)) return true;
+    try {
+      const blob = await this.getLocalAudioBlob(id);
+      return !!blob;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Récupère ou génère l'URL d'écoute locale (blob URL)
+   */
+  async getLocalAudioUrl(id: string): Promise<string | null> {
+    if (this.objectUrlCache.has(id)) {
+      return this.objectUrlCache.get(id)!;
+    }
+
+    const blob = await this.getLocalAudioBlob(id);
+    if (blob) {
+      const objectUrl = URL.createObjectURL(blob);
+      this.objectUrlCache.set(id, objectUrl);
+      return objectUrl;
+    }
+
+    return null;
+  }
+
+  /**
+   * Télécharge le fichier audio depuis sa source (serveur ou base64)
+   * et le stocke de manière permanente dans la mémoire locale de l'appareil
+   */
+  async downloadAndStoreLocally(id: string, sourceUrlOrBase64: string, duration?: number): Promise<string> {
+    // 1. Si déjà en mémoire locale, retourner directement
+    const existingUrl = await this.getLocalAudioUrl(id);
+    if (existingUrl) {
+      return existingUrl;
+    }
+
+    try {
+      let audioBlob: Blob;
+
+      // Cas 1 : Données Base64 (data:audio/...)
+      if (sourceUrlOrBase64.startsWith('data:')) {
+        const res = await fetch(sourceUrlOrBase64);
+        audioBlob = await res.blob();
+      } 
+      // Cas 2 : URL serveur relative ou absolue (/uploads/..., https://...)
+      else {
+        const response = await fetch(sourceUrlOrBase64);
+        if (!response.ok) {
+          throw new Error(`Erreur de téléchargement audio (HTTP ${response.status})`);
+        }
+        audioBlob = await response.blob();
       }
+
+      // Enregistre dans IndexedDB
+      const localUrl = await this.saveLocalAudio(id, audioBlob, duration);
+      return localUrl;
+    } catch (error) {
+      console.error("[LocalAudioStorage] Impossible de télécharger et stocker le vocal:", error);
+      // Retourner la source brute si échec pour ne pas bloquer complètement
+      return sourceUrlOrBase64;
+    }
+  }
+
+  /**
+   * Supprime un vocal du stockage local
+   */
+  async deleteLocalAudio(id: string): Promise<void> {
+    if (this.objectUrlCache.has(id)) {
+      URL.revokeObjectURL(this.objectUrlCache.get(id)!);
+      this.objectUrlCache.delete(id);
+    }
+    try {
+      const db = await this.getDB();
+      const transaction = db.transaction([STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      store.delete(id);
     } catch (e) {
-      console.warn(`[LocalAudioStorage] Erreur suppression (${messageId}):`, e);
+      console.warn("[LocalAudioStorage] Erreur suppression locale:", e);
     }
   }
 }
 
-export const localAudioStorage = new LocalAudioStorage();
-export default localAudioStorage;
+export const localAudioStorage = new LocalAudioStorageService();
