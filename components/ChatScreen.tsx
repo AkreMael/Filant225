@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User } from '../types';
 import { databaseService } from '../services/databaseService';
+import { audioService } from '../services/audioService';
+import { localAudioStorage } from '../services/localAudioStorage';
 import { Linkify } from '../utils/textUtils';
 import SpeakerIcon from './common/SpeakerIcon';
-import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone } from 'lucide-react';
+import VoiceMessagePlayer from './VoiceMessagePlayer';
+import VoiceRecorder from './VoiceRecorder';
+import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone, Loader2 } from 'lucide-react';
 
 interface ChatMessage {
   id?: string;
@@ -16,6 +20,11 @@ interface ChatMessage {
   serviceStatus?: string;
   isRead?: boolean;
   adminReadStatus?: 'LU' | 'NON LU' | 'VU';
+  type?: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  transcription?: string;
+  isUploading?: boolean;
 }
 
 interface ChatScreenProps {
@@ -52,6 +61,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Voice recording states
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
 
   const [viewportHeight, setViewportHeight] = useState<number | string>('100dvh');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -238,6 +251,106 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       await databaseService.savePrivateChatMessage(chatUserId, newMessage);
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
+    }
+  };
+
+  const handleSendVoiceRecording = async (
+    audioBlob: Blob,
+    durationSeconds: number,
+    liveTranscription?: string
+  ) => {
+    setIsRecordingVoice(false);
+    setIsUploadingVoice(true);
+
+    const sender = isAdmin ? 'admin' : 'user';
+    const msgId = `${sender === 'admin' ? 'admin' : 'user'}_voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const localAudioUrl = URL.createObjectURL(audioBlob);
+
+    // Initial optimistic voice message in conversation
+    const optimisticMessage: ChatMessage = {
+      id: msgId,
+      sender: sender,
+      text: liveTranscription ? `🎤 ${liveTranscription}` : '🎤 Message vocal',
+      audioUrl: localAudioUrl,
+      audioDuration: durationSeconds,
+      transcription: liveTranscription || '',
+      timestamp: Date.now(),
+      type: 'voice',
+      isUploading: true
+    };
+
+    setMessages(prev => {
+      if (prev.some(m => m.id === msgId)) return prev;
+      return [...prev, optimisticMessage];
+    });
+
+    // 0. Store locally in device storage (IndexedDB) immediately for local playback
+    try {
+      await localAudioStorage.saveAudio(msgId, audioBlob, localAudioUrl);
+    } catch (localSaveErr) {
+      console.warn('[Chat] Local storage initial save notice:', localSaveErr);
+    }
+
+    try {
+      // 1. Convert to Base64
+      const audioBase64 = await audioService.blobToBase64(audioBlob);
+
+      // 2. Transcribe voice in parallel with Gemini API
+      let finalTranscription = liveTranscription?.trim() || '';
+      try {
+        const aiTranscription = await audioService.transcribeAudio(audioBase64, audioBlob.type || 'audio/webm');
+        if (aiTranscription && aiTranscription !== 'Message vocal') {
+          finalTranscription = aiTranscription;
+        }
+      } catch (transcribeErr) {
+        console.warn('[Chat] AI Transcription error:', transcribeErr);
+      }
+
+      // 3. Upload audio file to server backend only (NO Firebase Storage used)
+      let permanentUrl = localAudioUrl;
+      try {
+        const res = await fetch('/api/upload-base64', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64: audioBase64,
+            filename: `${Date.now()}_${msgId}.webm`
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.url) {
+            permanentUrl = data.url;
+            // Also link the permanent server URL to the local audio cache
+            await localAudioStorage.saveAudio(msgId, audioBlob, permanentUrl);
+          }
+        }
+      } catch (uploadErr) {
+        console.warn('[Chat] Server upload notice, keeping local audio link:', uploadErr);
+      }
+
+      // 4. Final message object
+      const finalMessage: ChatMessage = {
+        id: msgId,
+        sender: sender,
+        text: finalTranscription ? `🎤 ${finalTranscription}` : '🎤 Message vocal',
+        audioUrl: permanentUrl,
+        audioDuration: durationSeconds,
+        transcription: finalTranscription,
+        type: 'voice',
+        timestamp: Date.now(),
+        isUploading: false
+      };
+
+      // Update optimistic state
+      setMessages(prev => prev.map(m => m.id === msgId ? finalMessage : m));
+
+      // Save metadata to Firebase Firestore & dispatch push notifications
+      await databaseService.savePrivateChatMessage(chatUserId, finalMessage);
+    } catch (error) {
+      console.error('[Chat] Error processing voice recording:', error);
+    } finally {
+      setIsUploadingVoice(false);
     }
   };
 
@@ -428,9 +541,30 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                           : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-none border border-slate-100 dark:border-0'
                       }`}
                     >
-                      <div className="text-sm leading-relaxed break-words whitespace-pre-wrap font-medium">
-                        {content}
-                      </div>
+                      {msg.audioUrl ? (
+                        <VoiceMessagePlayer 
+                          messageId={messageId}
+                          audioUrl={msg.audioUrl} 
+                          audioDuration={msg.audioDuration} 
+                          transcription={msg.transcription} 
+                          isMe={isMe} 
+                          timestamp={msg.timestamp} 
+                        />
+                      ) : msg.isUploading ? (
+                        <div className="flex items-center gap-3 py-1.5 px-0.5 min-w-[200px]">
+                          <div className="w-8 h-8 rounded-full bg-[#00a884]/20 flex items-center justify-center animate-spin text-[#00a884]">
+                            <Loader2 size={18} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-slate-800 dark:text-slate-100">Envoi du vocal...</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">Transcription avec Gemini...</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm leading-relaxed break-words whitespace-pre-wrap font-medium">
+                          {content}
+                        </div>
+                      )}
                       
                       {!isAdmin && msg.sender === 'admin' && (msg.paymentInfo || msg.whatsAppPayload || msg.providerPhone) && (
                         <div className="mt-4 pt-3.5 border-t border-[#00000010] dark:border-[#ffffff10] flex flex-col gap-2.5">
@@ -479,7 +613,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         
-                        {!isAdmin && msg.sender === 'admin' && (
+                        {!isAdmin && msg.sender === 'admin' && !msg.audioUrl && (
                           <SpeakerIcon text={msg.text} className="p-0.5 opacity-60" />
                         )}
 
@@ -542,106 +676,119 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       {/* WhatsApp Style Curved Footer Input Bar */}
       {isAdmin && (
         <div id="chat_footer" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
-          <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
-            <textarea
-              id="chat_input_textarea"
-              ref={textareaRef}
-              rows={1}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              onFocus={() => {
-                setTimeout(() => {
-                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                }, 150);
-              }}
-              placeholder="Écrivez votre message..."
-              className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
-              style={{ height: 'auto' }}
-            />
-          </div>
+          {!isRecordingVoice && (
+            <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
+              <textarea
+                id="chat_input_textarea"
+                ref={textareaRef}
+                rows={1}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                onFocus={() => {
+                  setTimeout(() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                  }, 150);
+                }}
+                placeholder="Écrivez votre message..."
+                className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
+                style={{ height: 'auto' }}
+              />
+            </div>
+          )}
           
-          <button
-            id="btn_send_message"
-            onClick={() => handleSendMessage()}
-            disabled={!inputText.trim()}
-            className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 ${
-              inputText.trim() 
-                ? 'bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg' 
-                : 'bg-slate-300 dark:bg-slate-750 text-slate-400 cursor-not-allowed shadow-none'
-            }`}
-          >
-            <Send size={18} />
-          </button>
+          {!isRecordingVoice && inputText.trim() ? (
+            <button
+              id="btn_send_message"
+              onClick={() => handleSendMessage()}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg cursor-pointer"
+              title="Envoyer le message"
+            >
+              <Send size={18} />
+            </button>
+          ) : (
+            <VoiceRecorder 
+              onSendRecording={handleSendVoiceRecording}
+              onRecordingStateChange={setIsRecordingVoice}
+              disabled={isUploadingVoice}
+            />
+          )}
         </div>
       )}
 
       {/* Special lock screen fake input bar */}
       {!isAdmin && isEnAttenteDeTraitement && !isLockScreenChat && (
-        <div 
-          id="chat_footer_fake"
-          onClick={() => setIsWritingMessage(true)}
-          className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner cursor-pointer"
-        >
-          <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
-            <span className="text-slate-400 dark:text-slate-300 text-sm py-1 font-semibold">
-              Écrivez votre message...
-            </span>
-          </div>
+        <div id="chat_footer_fake_container" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
+          {!isRecordingVoice && (
+            <div 
+              id="chat_footer_fake"
+              onClick={() => setIsWritingMessage(true)}
+              className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100 cursor-pointer"
+            >
+              <span className="text-slate-400 dark:text-slate-300 text-sm py-1 font-semibold">
+                Écrivez votre message...
+              </span>
+            </div>
+          )}
           
-          <button
-            id="btn_send_message_fake"
-            className="w-11 h-11 rounded-full flex items-center justify-center bg-slate-300 dark:bg-slate-750 text-slate-400 shadow-none shrink-0"
-          >
-            <Send size={18} />
-          </button>
+          <VoiceRecorder 
+            onSendRecording={handleSendVoiceRecording}
+            onRecordingStateChange={setIsRecordingVoice}
+            disabled={isUploadingVoice}
+          />
         </div>
       )}
 
       {/* Standard client-side footer if not on lock screen */}
       {!isAdmin && !isEnAttenteDeTraitement && !isLockScreenChat && (
         <div id="chat_footer_client" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
-          <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
-            <textarea
-              id="chat_input_textarea_client"
-              ref={textareaRef}
-              rows={1}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage();
-                }
-              }}
-              onFocus={() => {
-                setTimeout(() => {
-                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                }, 150);
-              }}
-              placeholder="Écrivez votre message..."
-              className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
-              style={{ height: 'auto' }}
-            />
-          </div>
+          {!isRecordingVoice && (
+            <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
+              <textarea
+                id="chat_input_textarea_client"
+                ref={textareaRef}
+                rows={1}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                onFocus={() => {
+                  setTimeout(() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                  }, 150);
+                }}
+                placeholder="Écrivez votre message..."
+                className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
+                style={{ height: 'auto' }}
+              />
+            </div>
+          )}
           
-          <button
-            id="btn_send_message_client"
-            onClick={() => handleSendMessage()}
-            disabled={!inputText.trim()}
-            className={`w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 ${
-              inputText.trim() 
-                ? 'bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg' 
-                : 'bg-slate-300 dark:bg-slate-750 text-slate-400 cursor-not-allowed shadow-none'
-            }`}
-          >
-            <Send size={18} />
-          </button>
+          {!isRecordingVoice && inputText.trim() ? (
+            <button
+              id="btn_send_message_client"
+              onClick={() => handleSendMessage()}
+              className="w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg cursor-pointer"
+              title="Envoyer le message"
+            >
+              <Send size={18} />
+            </button>
+          ) : (
+            <VoiceRecorder 
+              onSendRecording={handleSendVoiceRecording}
+              onRecordingStateChange={setIsRecordingVoice}
+              disabled={isUploadingVoice}
+            />
+          )}
         </div>
       )}
 
@@ -714,21 +861,33 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
               />
             </div>
 
-            <div className="flex justify-end gap-3 mt-1">
-              <button
-                onClick={() => setIsWritingMessage(false)}
-                className="px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleSendFromPopup}
-                disabled={!popupInputText.trim()}
-                className="px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow-md active:scale-95 bg-[#00a884] text-white hover:brightness-95 disabled:bg-slate-300 dark:disabled:bg-slate-750 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                <Send size={12} />
-                Envoyer
-              </button>
+            <div className="flex justify-between items-center gap-3 mt-1">
+              <div className="flex items-center">
+                <VoiceRecorder 
+                  onSendRecording={(blob, dur, transcript) => {
+                    setIsWritingMessage(false);
+                    handleSendVoiceRecording(blob, dur, transcript);
+                  }}
+                  disabled={isUploadingVoice}
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsWritingMessage(false)}
+                  className="px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleSendFromPopup}
+                  disabled={!popupInputText.trim()}
+                  className="px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow-md active:scale-95 bg-[#00a884] text-white hover:brightness-95 disabled:bg-slate-300 dark:disabled:bg-slate-750 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  <Send size={12} />
+                  Envoyer
+                </button>
+              </div>
             </div>
           </div>
         </div>

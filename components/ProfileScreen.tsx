@@ -4,6 +4,7 @@ import { User, Tab } from '../types';
 import ScannerOverlay, { extractQRInfo } from './ScannerOverlay';
 import { databaseService, SavedContact } from '../services/databaseService';
 import { imageService } from '../services/imageService';
+import { mapsService } from '../services/mapsService';
 import { getQuestionsForType, generateWhatsAppMessage } from './common/formDefinitions';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
 import { ImageCropperModal } from './common/ImageCropperModal';
@@ -247,6 +248,36 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       const stored = localStorage.getItem(`${PROFILE_IMAGE_KEY_PREFIX}${user.phone}`);
       return stored || null;
   });
+
+  const [isBroadcastingLocation, setIsBroadcastingLocation] = useState<boolean>(() => {
+    return localStorage.getItem(`filant_live_tracking_${user?.phone}`) === 'true';
+  });
+
+  const toggleLocationBroadcast = () => {
+    if (!user?.phone) return;
+    if (isBroadcastingLocation) {
+      mapsService.stopLiveBroadcasting(user.phone);
+      setIsBroadcastingLocation(false);
+      localStorage.setItem(`filant_live_tracking_${user.phone}`, 'false');
+      onShowPopup("Diffusion de votre position GPS en direct arrêtée.", 'alert');
+    } else {
+      const started = mapsService.startLiveBroadcasting(
+        {
+          id: user.phone,
+          name: user.name || 'Travailleur FILANT°225',
+          phone: user.phone,
+          category: 'Travailleur'
+        },
+        () => {},
+        (errMsg) => onShowPopup(errMsg, 'alert')
+      );
+      if (started) {
+        setIsBroadcastingLocation(true);
+        localStorage.setItem(`filant_live_tracking_${user.phone}`, 'true');
+        onShowPopup("Position GPS en direct activée ! Vos clients et l'administration peuvent désormais suivre votre localisation en temps réel sur la carte.", 'alert');
+      }
+    }
+  };
 
   useEffect(() => {
     let unsubWallet = () => {};
@@ -523,6 +554,32 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
                 <ProfileRow icon={<PayeIcon className="w-10 h-10 text-blue-600" />} title="Modes de paiement" subtitle="ESPÈCES / WAVE" onClick={() => { setActiveTab(Tab.Payment); handleClose(); }} rightElement={<div className="bg-green-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5"><span className="text-[10px] font-black text-green-700 uppercase tracking-tighter">Actif</span><ChevronRight className="h-3 w-3 text-green-700" /></div>} />
                 <div className="h-px bg-gray-50 mx-4"></div>
                 <ProfileRow icon={<ContactIcon className="w-10 h-10 text-orange-500" />} title="Assistance QR" subtitle="Contacts intégrés" onClick={() => setView('contacts')} />
+                <div className="h-px bg-gray-50 mx-4"></div>
+                <ProfileRow 
+                  icon={
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  } 
+                  title="Suivi GPS Travailleur en direct" 
+                  subtitle={isBroadcastingLocation ? "Position en direct activée • Visible sur la carte" : "Partager ma localisation en temps réel"} 
+                  onClick={toggleLocationBroadcast} 
+                  rightElement={
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); toggleLocationBroadcast(); }}
+                      className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all text-[9px] font-black uppercase ${
+                        isBroadcastingLocation ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isBroadcastingLocation ? 'bg-white animate-ping' : 'bg-slate-400'}`} />
+                      <span>{isBroadcastingLocation ? 'EN DIRECT' : 'ACTIVER'}</span>
+                    </button>
+                  } 
+                />
             </div>
             
             <div className="bg-white rounded-3xl overflow-hidden mx-4 shadow-sm border border-gray-100">

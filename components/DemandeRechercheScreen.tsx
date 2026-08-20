@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Tab } from '../types';
 import { databaseService } from '../services/databaseService';
 import { imageService } from '../services/imageService';
-import { LeafletMap } from './LeafletMap';
+import { GoogleLiveTrackingMap } from './GoogleLiveTrackingMap';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
 import { ArrowLeft, Search, Loader2, Compass, MapPin, Briefcase, Building, CheckCircle, MessageSquare, AlertCircle, X, ChevronLeft, ChevronRight, ChevronDown, Camera, Trash2, Check, RefreshCw, Heart, Share2 } from 'lucide-react';
 import { doc, onSnapshot, collection, query, orderBy, limit, getDocs, getDoc } from 'firebase/firestore';
@@ -1963,31 +1963,20 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
                 id="dynamic-3d-locator-map"
                 className="relative overflow-hidden -mx-5 -mt-6 w-[calc(100%+2.5rem)] h-[380px]"
               >
-                <LeafletMap 
+                <GoogleLiveTrackingMap 
                   userLat={startCoordsInfo.lat}
                   userLng={startCoordsInfo.lng}
                   userName="Ma Position"
+                  workerId={pinnedProfile ? (pinnedProfile.id || pinnedProfile.phone) : undefined}
                   providerLat={destCoordsInfo ? destCoordsInfo.lat : null}
                   providerLng={destCoordsInfo ? destCoordsInfo.lng : null}
                   providerName={pinnedProfile ? pinnedProfile.name : undefined}
                   providerCity={pinnedProfile ? pinnedProfile.city : undefined}
+                  providerPhone={pinnedProfile ? pinnedProfile.phone : undefined}
+                  providerAvatar={pinnedProfile ? (pinnedProfile.imageLink || pinnedProfile.profileImageUrl) : undefined}
+                  providerCategory={pinnedProfile ? (pinnedProfile.titleOrActivity || pinnedProfile.job || pinnedProfile.profileType) : undefined}
                   isSearching={isSearchingVille}
                 />
-
-                {/* Itinéraire GPS Floating Trigger Button overlayed over Map */}
-                {pinnedProfile && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openGoogleMapsRoute();
-                    }}
-                    className="absolute bottom-4 left-4 z-[400] flex items-center gap-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 active:scale-95 px-3.5 py-2.5 rounded-2xl border border-orange-400 text-[10px] font-black uppercase tracking-wider text-white shadow-xl transition-all font-sans cursor-pointer hover:shadow-orange-500/20"
-                    title="Ouvrir l'itinéraire Google Maps"
-                  >
-                    <Compass className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '6s' }} />
-                    <span>Itinéraire GPS ↗</span>
-                  </button>
-                )}
               </div>
 
               {/* Informative Dashboard HUD sheet below Map overlapping with organic wave */}
