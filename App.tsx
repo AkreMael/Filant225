@@ -1900,6 +1900,7 @@ const App: React.FC = () => {
             onOpenOnlineProviders={handleOpenOnlineProviders}
             onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
             onOpenForm={(context) => setInteractiveModalContext(context)}
+            onViewMyProfile={() => setIsProfileOpen(true)}
           />;
           break;
         case 'location_hub':
@@ -1913,6 +1914,7 @@ const App: React.FC = () => {
             onOpenOnlineProviders={handleOpenOnlineProviders}
             onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
             onOpenForm={(context) => setInteractiveModalContext(context)}
+            onViewMyProfile={() => setIsProfileOpen(true)}
           />;
           break;
         case 'notifications':

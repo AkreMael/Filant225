@@ -6,7 +6,13 @@ import EmbeddedForm from './EmbeddedForm';
 import { User, UserPlus, Headphones, Users } from 'lucide-react';
 import { getFormImage } from './common/formDefinitions';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
+import { 
+  AlreadyRegisteredModal, 
+  ProviderAvailabilityModal, 
+  matchInscriptionsForTitle, 
+  isUserRegistrationOnline 
+} from './common/OnlineStatusModal';
 
 // --- ICONS (Matching the provided mockup) ---
 const BackIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={className || "h-6 w-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -296,6 +302,10 @@ interface WorkerCardProps {
   onOpenSiteWorkers?: () => void;
   onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
+  inscriptionsList: any[];
+  currentUserInscription?: any;
+  onShowAlreadyRegistered: () => void;
+  onShowProviderAvailability: (info: { title: string; count: number; onServiceClient: () => void }) => void;
 }
 
 const VerifiedBadge = () => (
@@ -313,7 +323,11 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
   onOpenOnlineProviders, 
   onOpenSiteWorkers, 
   onStartRegistration, 
-  onOpenForm 
+  onOpenForm,
+  inscriptionsList,
+  currentUserInscription,
+  onShowAlreadyRegistered,
+  onShowProviderAvailability
 }) => {
   const isDisponible = worker.category === 'Disponible';
   const imageSrc = worker.profileImageUrl || getSynchronizedWorkerImage(worker.name);
@@ -336,6 +350,12 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
   };
 
   const handleInscriptionClick = () => {
+    const isOnline = isUserRegistrationOnline(user, inscriptionsList, currentUserInscription);
+    if (isOnline) {
+      onShowAlreadyRegistered();
+      return;
+    }
+
     if (onStartRegistration) {
       onStartRegistration('Travailleur', displayName);
     } else {
@@ -344,11 +364,12 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
   };
 
   const handleContactPrestataireClick = () => {
-    if (onOpenOnlineProviders) {
-      onOpenOnlineProviders();
-    } else if (onOpenSiteWorkers) {
-      onOpenSiteWorkers();
-    }
+    const matching = matchInscriptionsForTitle(displayName, inscriptionsList);
+    onShowProviderAvailability({
+      title: displayName,
+      count: matching.length,
+      onServiceClient: handleDemandeClick
+    });
   };
 
   return (
@@ -435,6 +456,7 @@ interface WorkerListScreenProps {
   onOpenOnlineProviders?: () => void;
   onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
+  onViewMyProfile?: () => void;
 }
 
 const WorkerListScreen: React.FC<WorkerListScreenProps> = ({ 
@@ -444,13 +466,63 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
   onOpenSiteWorkers, 
   onOpenOnlineProviders, 
   onStartRegistration, 
-  onOpenForm 
+  onOpenForm,
+  onViewMyProfile
 }) => {
   const [dynamicDisponibles, setDynamicDisponibles] = useState<Worker[]>([]);
+  const [inscriptionsList, setInscriptionsList] = useState<any[]>([]);
+  const [currentUserInscription, setCurrentUserInscription] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Disponible');
+
+  // Modal states
+  const [isAlreadyRegisteredOpen, setIsAlreadyRegisteredOpen] = useState(false);
+  const [availabilityModalData, setAvailabilityModalData] = useState<{
+    isOpen: boolean;
+    title: string;
+    count: number;
+    onServiceClient: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    count: 0,
+    onServiceClient: () => {}
+  });
+
+  // Real-time Inscriptions Listener
+  useEffect(() => {
+    const qInscriptions = query(collection(db, 'Inscriptions'), limit(300));
+    const unsubInsc = onSnapshot(qInscriptions, (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setInscriptionsList(list);
+    }, (err) => {
+      console.warn("Error fetching Inscriptions in WorkerListScreen:", err);
+    });
+
+    return () => unsubInsc();
+  }, []);
+
+  // Listen to current user inscription doc
+  useEffect(() => {
+    if (!user?.phone) return;
+    const sanitizedPhone = user.phone.replace(/\D/g, '');
+    if (!sanitizedPhone) return;
+
+    const userDocRef = doc(db, 'Inscriptions', sanitizedPhone);
+    const unsubUserInsc = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        setCurrentUserInscription(snap.data());
+      } else {
+        setCurrentUserInscription(null);
+      }
+    }, (err) => {
+      console.warn("Error fetching user Inscription doc in WorkerListScreen:", err);
+    });
+
+    return () => unsubUserInsc();
+  }, [user?.phone]);
 
   useEffect(() => {
     setLoading(true);
@@ -617,6 +689,17 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
                         onOpenSiteWorkers={onOpenSiteWorkers}
                         onStartRegistration={onStartRegistration}
                         onOpenForm={onOpenForm}
+                        inscriptionsList={inscriptionsList}
+                        currentUserInscription={currentUserInscription}
+                        onShowAlreadyRegistered={() => setIsAlreadyRegisteredOpen(true)}
+                        onShowProviderAvailability={(info) => {
+                          setAvailabilityModalData({
+                            isOpen: true,
+                            title: info.title,
+                            count: info.count,
+                            onServiceClient: info.onServiceClient
+                          });
+                        }}
                     />
                 ))}
                 {filteredWorkers.length === 0 && (
@@ -628,6 +711,27 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
             </div>
         )}
       </main>
+
+      {/* Modals */}
+      <AlreadyRegisteredModal
+        isOpen={isAlreadyRegisteredOpen}
+        onClose={() => setIsAlreadyRegisteredOpen(false)}
+        onViewProfile={() => {
+          if (onViewMyProfile) {
+            onViewMyProfile();
+          } else if (onOpenOnlineProviders) {
+            onOpenOnlineProviders();
+          }
+        }}
+      />
+
+      <ProviderAvailabilityModal
+        isOpen={availabilityModalData.isOpen}
+        onClose={() => setAvailabilityModalData(prev => ({ ...prev, isOpen: false }))}
+        title={availabilityModalData.title}
+        foundCount={availabilityModalData.count}
+        onOpenServiceClient={availabilityModalData.onServiceClient}
+      />
     </div>
   );
 };

@@ -3,8 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import EmbeddedForm from './EmbeddedForm';
 import { db } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { UserPlus, Headphones, Users } from 'lucide-react';
+import { 
+  AlreadyRegisteredModal, 
+  ProviderAvailabilityModal, 
+  matchInscriptionsForTitle, 
+  isUserRegistrationOnline 
+} from './common/OnlineStatusModal';
 
 // --- ICONS ---
 const BackIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={className || "h-6 w-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -168,6 +174,10 @@ interface LocationCardProps {
   onOpenOnlineProviders?: () => void;
   onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
+  inscriptionsList: any[];
+  currentUserInscription?: any;
+  onShowAlreadyRegistered: () => void;
+  onShowProviderAvailability: (info: { title: string; count: number; onServiceClient: () => void }) => void;
 }
 
 const LocationCard: React.FC<LocationCardProps> = ({ 
@@ -176,7 +186,11 @@ const LocationCard: React.FC<LocationCardProps> = ({
   onPropose, 
   onOpenOnlineProviders, 
   onStartRegistration, 
-  onOpenForm 
+  onOpenForm,
+  inscriptionsList,
+  currentUserInscription,
+  onShowAlreadyRegistered,
+  onShowProviderAvailability
 }) => {
   const equipmentImgData = item.image || EQUIPMENT_IMAGES[item.title];
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
@@ -201,12 +215,27 @@ const LocationCard: React.FC<LocationCardProps> = ({
   };
 
   const handleInscriptionClick = () => {
+    const isOnline = isUserRegistrationOnline(user, inscriptionsList, currentUserInscription);
+    if (isOnline) {
+      onShowAlreadyRegistered();
+      return;
+    }
+
     const targetProfile = item.category === 'appartement' ? 'Agence' : 'Propriétaire';
     if (onStartRegistration) {
       onStartRegistration(targetProfile, item.title);
     } else {
       onPropose(item.proposeUrl);
     }
+  };
+
+  const handleContactPrestataireClick = () => {
+    const matching = matchInscriptionsForTitle(item.title, inscriptionsList);
+    onShowProviderAvailability({
+      title: item.title,
+      count: matching.length,
+      onServiceClient: handleDemandeClick
+    });
   };
 
   const renderVisual = () => {
@@ -267,11 +296,7 @@ const LocationCard: React.FC<LocationCardProps> = ({
 
         {/* Contacter un prestataire */}
         <button
-          onClick={() => {
-            if (onOpenOnlineProviders) {
-              onOpenOnlineProviders();
-            }
-          }}
+          onClick={handleContactPrestataireClick}
           className="flex-1 min-w-[130px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white border border-emerald-700 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
           title="Contacter un prestataire"
         >
@@ -291,6 +316,7 @@ interface LocationScreenProps {
   onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
   initialCategory?: 'appartement' | 'equipement';
+  onViewMyProfile?: () => void;
 }
 
 const LocationScreen: React.FC<LocationScreenProps> = ({ 
@@ -300,17 +326,67 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
   onOpenOnlineProviders, 
   onStartRegistration, 
   onOpenForm, 
-  initialCategory = 'appartement' 
+  initialCategory = 'appartement',
+  onViewMyProfile
 }) => {
   const [activeTab, setActiveTab] = useState<'appartement' | 'equipement'>(initialCategory);
   const [searchTerm, setSearchTerm] = useState('');
   const [dynamicEquipements, setDynamicEquipements] = useState<any[]>([]);
   const [dynamicAppartements, setDynamicAppartements] = useState<any[]>([]);
+  const [inscriptionsList, setInscriptionsList] = useState<any[]>([]);
+  const [currentUserInscription, setCurrentUserInscription] = useState<any | null>(null);
+
+  // Modal states
+  const [isAlreadyRegisteredOpen, setIsAlreadyRegisteredOpen] = useState(false);
+  const [availabilityModalData, setAvailabilityModalData] = useState<{
+    isOpen: boolean;
+    title: string;
+    count: number;
+    onServiceClient: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    count: 0,
+    onServiceClient: () => {}
+  });
 
   // Update tab if initialCategory changes (from outside navigation)
   useEffect(() => {
     setActiveTab(initialCategory);
   }, [initialCategory]);
+
+  // Real-time Firestore Inscriptions Listener
+  useEffect(() => {
+    const qInscriptions = query(collection(db, 'Inscriptions'), limit(300));
+    const unsubInsc = onSnapshot(qInscriptions, (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setInscriptionsList(list);
+    }, (err) => {
+      console.warn("Error fetching Inscriptions in LocationScreen:", err);
+    });
+
+    return () => unsubInsc();
+  }, []);
+
+  // Listen to current user inscription doc if phone is available
+  useEffect(() => {
+    if (!user?.phone) return;
+    const sanitizedPhone = user.phone.replace(/\D/g, '');
+    if (!sanitizedPhone) return;
+
+    const userDocRef = doc(db, 'Inscriptions', sanitizedPhone);
+    const unsubUserInsc = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        setCurrentUserInscription(snap.data());
+      } else {
+        setCurrentUserInscription(null);
+      }
+    }, (err) => {
+      console.warn("Error fetching user Inscription doc:", err);
+    });
+
+    return () => unsubUserInsc();
+  }, [user?.phone]);
 
   useEffect(() => {
     const qEq = query(collection(db, 'Equipements'), orderBy('createdAt', 'desc'), limit(100));
@@ -432,6 +508,17 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
                 onOpenOnlineProviders={onOpenOnlineProviders}
                 onStartRegistration={onStartRegistration}
                 onOpenForm={onOpenForm}
+                inscriptionsList={inscriptionsList}
+                currentUserInscription={currentUserInscription}
+                onShowAlreadyRegistered={() => setIsAlreadyRegisteredOpen(true)}
+                onShowProviderAvailability={(info) => {
+                  setAvailabilityModalData({
+                    isOpen: true,
+                    title: info.title,
+                    count: info.count,
+                    onServiceClient: info.onServiceClient
+                  });
+                }}
             />
           ))}
           {filteredItems.length === 0 && (
@@ -441,6 +528,27 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
           )}
         </div>
       </main>
+
+      {/* Modals */}
+      <AlreadyRegisteredModal
+        isOpen={isAlreadyRegisteredOpen}
+        onClose={() => setIsAlreadyRegisteredOpen(false)}
+        onViewProfile={() => {
+          if (onViewMyProfile) {
+            onViewMyProfile();
+          } else if (onOpenOnlineProviders) {
+            onOpenOnlineProviders();
+          }
+        }}
+      />
+
+      <ProviderAvailabilityModal
+        isOpen={availabilityModalData.isOpen}
+        onClose={() => setAvailabilityModalData(prev => ({ ...prev, isOpen: false }))}
+        title={availabilityModalData.title}
+        foundCount={availabilityModalData.count}
+        onOpenServiceClient={availabilityModalData.onServiceClient}
+      />
     </div>
   );
 };
