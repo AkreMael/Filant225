@@ -4,6 +4,7 @@ import { User } from '../types';
 import EmbeddedForm from './EmbeddedForm';
 import { db } from '../firebase';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { UserPlus, Headphones, Users } from 'lucide-react';
 
 // --- ICONS ---
 const BackIcon: React.FC<{ className?: string }> = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" className={className || "h-6 w-6"} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>;
@@ -164,10 +165,19 @@ interface LocationCardProps {
   item: LocationItem;
   user: User;
   onPropose: (url: string) => void;
+  onOpenOnlineProviders?: () => void;
+  onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
 }
 
-const LocationCard: React.FC<LocationCardProps> = ({ item, user, onPropose, onOpenForm }) => {
+const LocationCard: React.FC<LocationCardProps> = ({ 
+  item, 
+  user, 
+  onPropose, 
+  onOpenOnlineProviders, 
+  onStartRegistration, 
+  onOpenForm 
+}) => {
   const equipmentImgData = item.image || EQUIPMENT_IMAGES[item.title];
   const [currentImgIndex, setCurrentImgIndex] = useState(0);
 
@@ -188,6 +198,15 @@ const LocationCard: React.FC<LocationCardProps> = ({ item, user, onPropose, onOp
       imageUrl: typeof src === 'string' ? src : src[0],
       description: item.description
     });
+  };
+
+  const handleInscriptionClick = () => {
+    const targetProfile = item.category === 'appartement' ? 'Agence' : 'Propriétaire';
+    if (onStartRegistration) {
+      onStartRegistration(targetProfile, item.title);
+    } else {
+      onPropose(item.proposeUrl);
+    }
   };
 
   const renderVisual = () => {
@@ -224,31 +243,41 @@ const LocationCard: React.FC<LocationCardProps> = ({ item, user, onPropose, onOp
         </div>
       </div>
       
-      {/* Action Buttons as Circular Icons */}
-      <div className="flex items-center justify-end gap-3 mt-4">
+      {/* 3 Action Buttons */}
+      <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 mt-4 pt-3 border-t border-gray-100">
+        {/* Inscription */}
         <button
-          onClick={() => onPropose(item.proposeUrl)}
-          className="w-11 h-11 rounded-full border-2 border-orange-500 flex items-center justify-center text-orange-500 hover:bg-orange-50 active:scale-90 transition-all shadow-md bg-white"
-          title="Proposer"
+          onClick={handleInscriptionClick}
+          className="flex-1 min-w-[100px] py-2.5 px-3 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Inscription"
         >
-          <PersonIcon />
+          <UserPlus className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>Inscription</span>
         </button>
 
+        {/* Service client */}
         <button
           onClick={handleDemandeClick}
-          className={`w-11 h-11 rounded-full border-2 flex items-center justify-center transition-all shadow-md active:scale-90 animate-demande-signal bg-white border-orange-500 text-orange-500`}
-          title="Demander"
+          className="flex-1 min-w-[110px] py-2.5 px-3 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white border border-orange-600 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-orange-500/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Service client"
         >
-          <SendIcon />
+          <Headphones className="w-4 h-4 text-white shrink-0" />
+          <span>Service client</span>
         </button>
 
-        <a
-          href="tel:0705052632"
-          className="w-11 h-11 rounded-full border-2 border-orange-500 flex items-center justify-center text-orange-500 hover:bg-orange-50 active:scale-90 transition-all shadow-md bg-white"
-          title="Appel"
+        {/* Contacter un prestataire */}
+        <button
+          onClick={() => {
+            if (onOpenOnlineProviders) {
+              onOpenOnlineProviders();
+            }
+          }}
+          className="flex-1 min-w-[130px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white border border-emerald-700 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Contacter un prestataire"
         >
-          <PhoneIcon />
-        </a>
+          <Users className="w-4 h-4 text-white shrink-0" />
+          <span>Contacter un prestataire</span>
+        </button>
       </div>
     </div>
   );
@@ -258,11 +287,21 @@ interface LocationScreenProps {
   onBack: () => void;
   user: User;
   onPropose: (url: string, title: string) => void;
+  onOpenOnlineProviders?: () => void;
+  onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
   initialCategory?: 'appartement' | 'equipement';
 }
 
-const LocationScreen: React.FC<LocationScreenProps> = ({ onBack, user, onPropose, onOpenForm, initialCategory = 'appartement' }) => {
+const LocationScreen: React.FC<LocationScreenProps> = ({ 
+  onBack, 
+  user, 
+  onPropose, 
+  onOpenOnlineProviders, 
+  onStartRegistration, 
+  onOpenForm, 
+  initialCategory = 'appartement' 
+}) => {
   const [activeTab, setActiveTab] = useState<'appartement' | 'equipement'>(initialCategory);
   const [searchTerm, setSearchTerm] = useState('');
   const [dynamicEquipements, setDynamicEquipements] = useState<any[]>([]);
@@ -390,6 +429,8 @@ const LocationScreen: React.FC<LocationScreenProps> = ({ onBack, user, onPropose
                 item={item} 
                 user={user}
                 onPropose={(url) => onPropose(url, item.title)}
+                onOpenOnlineProviders={onOpenOnlineProviders}
+                onStartRegistration={onStartRegistration}
                 onOpenForm={onOpenForm}
             />
           ))}

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { databaseService } from '../services/databaseService';
 import { Worker, User as UserType } from '../types';
 import EmbeddedForm from './EmbeddedForm';
-import { User } from 'lucide-react';
+import { User, UserPlus, Headphones, Users } from 'lucide-react';
 import { getFormImage } from './common/formDefinitions';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
@@ -292,6 +292,9 @@ interface WorkerCardProps {
   worker: Worker & { formType?: 'worker' | 'location' | 'night_service' | 'rapid_building_service' };
   user: UserType;
   onScheduleService: (url?: string, title?: string) => void;
+  onOpenOnlineProviders?: () => void;
+  onOpenSiteWorkers?: () => void;
+  onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
 }
 
@@ -303,7 +306,15 @@ const VerifiedBadge = () => (
   </div>
 );
 
-const WorkerCard: React.FC<WorkerCardProps> = ({ worker, user, onScheduleService, onOpenForm }) => {
+const WorkerCard: React.FC<WorkerCardProps> = ({ 
+  worker, 
+  user, 
+  onScheduleService, 
+  onOpenOnlineProviders, 
+  onOpenSiteWorkers, 
+  onStartRegistration, 
+  onOpenForm 
+}) => {
   const isDisponible = worker.category === 'Disponible';
   const imageSrc = worker.profileImageUrl || getSynchronizedWorkerImage(worker.name);
   
@@ -324,8 +335,24 @@ const WorkerCard: React.FC<WorkerCardProps> = ({ worker, user, onScheduleService
     });
   };
 
+  const handleInscriptionClick = () => {
+    if (onStartRegistration) {
+      onStartRegistration('Travailleur', displayName);
+    } else {
+      handleExigeClick();
+    }
+  };
+
+  const handleContactPrestataireClick = () => {
+    if (onOpenOnlineProviders) {
+      onOpenOnlineProviders();
+    } else if (onOpenSiteWorkers) {
+      onOpenSiteWorkers();
+    }
+  };
+
   return (
-    <div className={`bg-white rounded-[2.5rem] p-5 flex flex-col transition-all relative overflow-hidden animate-in zoom-in-95 duration-300 shadow-xl`}>
+    <div className={`bg-white rounded-[2.5rem] p-5 flex flex-col transition-all relative overflow-hidden animate-in zoom-in-95 duration-300 shadow-xl border-2 border-orange-500`}>
       <div className="flex gap-4">
         {/* Profile Image - Large Rounded Rectangle */}
         <div className="w-24 h-24 rounded-3xl border-2 border-orange-500 overflow-hidden flex-shrink-0 relative bg-gray-50 flex items-center justify-center shadow-inner">
@@ -358,34 +385,37 @@ const WorkerCard: React.FC<WorkerCardProps> = ({ worker, user, onScheduleService
         </div>
       </div>
       
-      {/* Footer Area with Circular Action Buttons */}
-      <div className="flex items-center justify-end gap-3 mt-4">
-        {/* Proposer - Person Icon (Orange Outline) */}
+      {/* 3 Action Buttons */}
+      <div className="flex flex-wrap sm:flex-nowrap items-stretch gap-2 mt-4 pt-3 border-t border-gray-100">
+        {/* Inscription */}
         <button
-          onClick={handleExigeClick}
-          className="w-11 h-11 rounded-full border-2 border-orange-500 flex items-center justify-center text-orange-500 hover:bg-orange-50 active:scale-90 transition-all shadow-md bg-white"
-          title="Proposer"
+          onClick={handleInscriptionClick}
+          className="flex-1 min-w-[100px] py-2.5 px-3 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Inscription"
         >
-          <PersonIcon />
+          <UserPlus className="w-4 h-4 text-blue-600 shrink-0" />
+          <span>Inscription</span>
         </button>
 
-        {/* Demander - Send/Plane Icon (Orange Outline) */}
+        {/* Service client */}
         <button
           onClick={handleDemandeClick}
-          className={`w-11 h-11 rounded-full border-2 flex items-center justify-center transition-all shadow-md active:scale-90 animate-demande-signal bg-white border-orange-500 text-orange-500`}
-          title="Demander"
+          className="flex-1 min-w-[110px] py-2.5 px-3 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white border border-orange-600 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-orange-500/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Service client"
         >
-          <SendIcon />
+          <Headphones className="w-4 h-4 text-white shrink-0" />
+          <span>Service client</span>
         </button>
 
-        {/* Appel - Phone Icon (Orange Outline) */}
-        <a
-          href={`tel:${worker.phone}`}
-          className="w-11 h-11 rounded-full border-2 border-orange-500 flex items-center justify-center text-orange-500 hover:bg-orange-50 active:scale-90 transition-all shadow-md bg-white"
-          title="Appel"
+        {/* Contacter un prestataire */}
+        <button
+          onClick={handleContactPrestataireClick}
+          className="flex-1 min-w-[130px] py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white border border-emerald-700 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+          title="Contacter un prestataire"
         >
-          <PhoneIcon />
-        </a>
+          <Users className="w-4 h-4 text-white shrink-0" />
+          <span>Contacter un prestataire</span>
+        </button>
       </div>
       
       {/* Decorative Status Dot */}
@@ -402,10 +432,20 @@ interface WorkerListScreenProps {
   user: UserType;
   onScheduleService: (url?: string, title?: string) => void;
   onOpenSiteWorkers: () => void;
+  onOpenOnlineProviders?: () => void;
+  onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title: string) => void;
   onOpenForm: (context: { formType: 'worker' | 'location' | 'night_service' | 'rapid_building_service', title: string, imageUrl?: string, description?: string }) => void;
 }
 
-const WorkerListScreen: React.FC<WorkerListScreenProps> = ({ onBack, user, onScheduleService, onOpenSiteWorkers, onOpenForm }) => {
+const WorkerListScreen: React.FC<WorkerListScreenProps> = ({ 
+  onBack, 
+  user, 
+  onScheduleService, 
+  onOpenSiteWorkers, 
+  onOpenOnlineProviders, 
+  onStartRegistration, 
+  onOpenForm 
+}) => {
   const [dynamicDisponibles, setDynamicDisponibles] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -573,6 +613,9 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({ onBack, user, onSch
                         worker={worker} 
                         user={user}
                         onScheduleService={onScheduleService}
+                        onOpenOnlineProviders={onOpenOnlineProviders}
+                        onOpenSiteWorkers={onOpenSiteWorkers}
+                        onStartRegistration={onStartRegistration}
                         onOpenForm={onOpenForm}
                     />
                 ))}

@@ -2,6 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
+import SuggestiveAutocompleteInput, { JOB_SUGGESTIONS, EQUIPMENT_SUGGESTIONS } from './common/SuggestiveAutocompleteInput';
+import { 
+  generateWorkerDescription, 
+  generateEquipmentDescription, 
+  generateAgencyDescription, 
+  generateCompanyDescription 
+} from './common/autoDescriptions';
 import { 
   ChevronRight, 
   ChevronDown,
@@ -16,7 +23,9 @@ import {
   CheckCircle2,
   Camera,
   Upload,
-  X
+  X,
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import { databaseService } from '../services/databaseService';
 import { imageService } from '../services/imageService';
@@ -26,6 +35,9 @@ interface SmartRegistrationScreenProps {
   onComplete: () => void;
   onBack: () => void;
   currentUser?: any;
+  initialProfile?: ProfileType;
+  initialStep?: number;
+  initialTitle?: string;
   onShowPopup?: (
     message: string, 
     type: 'alert' | 'confirm', 
@@ -44,12 +56,21 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
   onComplete, 
   onBack, 
   currentUser,
+  initialProfile,
+  initialStep,
+  initialTitle,
   onShowPopup,
   onGoToMenu,
   onRegisterBackHandler
 }) => {
-  const [step, setStep] = useState(1);
-  const [selectedProfile, setSelectedProfile] = useState<ProfileType>('Travailleur');
+  const [step, setStep] = useState(initialStep || (initialProfile ? 2 : 1));
+  const [selectedProfile, setSelectedProfile] = useState<ProfileType>(initialProfile || 'Travailleur');
+  
+  const initJob = (initialProfile === 'Travailleur' && initialTitle) ? initialTitle : '';
+  const initEquip = (initialProfile === 'Propriétaire' && initialTitle) ? initialTitle : '';
+  const initProp = (initialProfile === 'Agence' && initialTitle) ? initialTitle : '';
+  const initPoste = (initialProfile === 'Entreprise' && initialTitle) ? initialTitle : '';
+
   const [formData, setFormData] = useState({ 
     name: currentUser?.name || '', 
     city: currentUser?.city || '', 
@@ -57,25 +78,28 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     profileImageUrl: currentUser?.profileImageUrl || '',
     photos: [] as string[],
     // Travailleur
-    job: '',
+    job: initJob,
     learnedFrom: '' as 'Sur le tas' | 'Formation professionnelle' | 'Diplôme' | '',
     availability: '',
     movementZone: '',
-    skillsDescription: '',
+    skillsDescription: initJob ? generateWorkerDescription(initJob) : '',
+    paymentFrequency: '' as 'Semaine' | 'Mois' | 'Jour' | 'Contrat' | '',
+    salaryAmount: '',
     salary: '',
     // Propriétaire
-    equipmentType: '',
+    equipmentType: initEquip,
     equipmentCategory: '',
     quantity: '',
     equipmentCity: '',
     rentalPrice: '',
-    equipmentDescription: '',
+    equipmentDescription: initEquip ? generateEquipmentDescription(initEquip) : '',
     // Agence
     agencyName: '',
     agencyCity: '',
     agencyPhone: '',
-    propertyTypes: '',
+    propertyTypes: initProp,
     agencyZone: '',
+    agencyDescription: initProp ? generateAgencyDescription(initProp) : '',
     // Entreprise
     companyName: '',
     companyCity: '',
@@ -84,13 +108,47 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
     companyServices: '',
     proposedSalary: '',
     companyOwner: '',
-    companyPoste: '',
+    companyPoste: initPoste,
     companyWorkersCount: '',
     companyContractType: '',
     companySalary: '',
     companyHours: '',
-    companySkills: '',
+    companySkills: initPoste ? generateCompanyDescription(initPoste) : '',
   });
+
+  useEffect(() => {
+    if (initialProfile) {
+      setSelectedProfile(initialProfile);
+      setStep(initialStep || 2);
+    }
+    if (initialTitle) {
+      if (initialProfile === 'Travailleur') {
+        setFormData(prev => ({
+          ...prev,
+          job: initialTitle,
+          skillsDescription: generateWorkerDescription(initialTitle)
+        }));
+      } else if (initialProfile === 'Propriétaire') {
+        setFormData(prev => ({
+          ...prev,
+          equipmentType: initialTitle,
+          equipmentDescription: generateEquipmentDescription(initialTitle)
+        }));
+      } else if (initialProfile === 'Agence') {
+        setFormData(prev => ({
+          ...prev,
+          propertyTypes: initialTitle,
+          agencyDescription: generateAgencyDescription(initialTitle)
+        }));
+      } else if (initialProfile === 'Entreprise') {
+        setFormData(prev => ({
+          ...prev,
+          companyPoste: initialTitle,
+          companySkills: generateCompanyDescription(initialTitle)
+        }));
+      }
+    }
+  }, [initialProfile, initialTitle, initialStep]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -205,19 +263,23 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
 
   // Persistence logic
   useEffect(() => {
+    if (initialProfile) {
+      setSelectedProfile(initialProfile);
+      setStep(initialStep || 2);
+    }
     const saved = localStorage.getItem('filant_registration_draft');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.formData) setFormData(parsed.formData);
-        if (parsed.profile) setSelectedProfile(parsed.profile);
-        if (parsed.step) setStep(parsed.step);
+        if (!initialProfile && parsed.profile) setSelectedProfile(parsed.profile);
+        if (!initialStep && !initialProfile && parsed.step) setStep(parsed.step);
         if (parsed.isSaved !== undefined) setIsSaved(parsed.isSaved);
       } catch (e) {
         console.error("Error loading draft:", e);
       }
     }
-  }, []);
+  }, [initialProfile, initialStep]);
 
   useEffect(() => {
     const draft = {
@@ -294,14 +356,16 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
       if (!formData.learnedFrom) newErrors.push('learnedFrom');
       if (!formData.availability) newErrors.push('availability');
       if (!formData.movementZone) newErrors.push('movementZone');
-      if (!formData.skillsDescription) newErrors.push('skillsDescription');
+      if (!formData.skillsDescription && !formData.job) newErrors.push('skillsDescription');
+      if (!formData.paymentFrequency) newErrors.push('paymentFrequency');
+      if (formData.paymentFrequency !== 'Contrat' && !formData.salaryAmount) newErrors.push('salaryAmount');
     } else if (selectedProfile === 'Propriétaire') {
       if (!formData.equipmentType) newErrors.push('equipmentType');
       if (!formData.equipmentCategory) newErrors.push('equipmentCategory');
       if (!formData.quantity) newErrors.push('quantity');
       if (!formData.equipmentCity) newErrors.push('equipmentCity');
       if (!formData.rentalPrice) newErrors.push('rentalPrice');
-      if (!formData.equipmentDescription) newErrors.push('equipmentDescription');
+      if (!formData.equipmentDescription && !formData.equipmentType) newErrors.push('equipmentDescription');
     } else if (selectedProfile === 'Agence') {
       if (!formData.agencyName) newErrors.push('agencyName');
       if (!formData.agencyCity) newErrors.push('agencyCity');
@@ -318,7 +382,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
       if (!formData.companyContractType) newErrors.push('companyContractType');
       if (!formData.companySalary) newErrors.push('companySalary');
       if (!formData.companyHours) newErrors.push('companyHours');
-      if (!formData.companySkills) newErrors.push('companySkills');
+      if (!formData.companySkills && !formData.companyPoste && !formData.companyName) newErrors.push('companySkills');
     }
 
     setErrors(newErrors);
@@ -350,6 +414,11 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
         const firstPhoto = rawPhotos.length > 0 ? rawPhotos[0] : '';
         let currentProfileImageUrl = firstPhoto || formData.profileImageUrl || '';
 
+        const effectiveWorkerDesc = formData.skillsDescription || generateWorkerDescription(formData.job);
+        const effectiveEquipDesc = formData.equipmentDescription || generateEquipmentDescription(formData.equipmentType);
+        const effectiveAgencyDesc = formData.agencyDescription || generateAgencyDescription(formData.propertyTypes, formData.agencyName);
+        const effectiveCompanySkills = formData.companySkills || generateCompanyDescription(formData.companyPoste, formData.companyName);
+
         const inscriptionData: any = {
           profileType: selectedProfile,
           name: formData.name,
@@ -368,9 +437,18 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               learnedFrom: formData.learnedFrom,
               availability: formData.availability,
               movementZone: formData.movementZone,
-              skillsDescription: formData.skillsDescription,
-              salary: formData.salary || '',
-              pretentionSalariale: formData.salary || ''
+              skillsDescription: effectiveWorkerDesc,
+              description: effectiveWorkerDesc,
+              paymentFrequency: formData.paymentFrequency,
+              salaryPeriod: formData.paymentFrequency,
+              salaryAmount: formData.paymentFrequency === 'Contrat' ? '' : formData.salaryAmount,
+              desiredSalary: formData.paymentFrequency === 'Contrat' ? 'Contrat' : formData.salaryAmount,
+              salary: formData.paymentFrequency === 'Contrat' 
+                ? 'Contrat' 
+                : (formData.salaryAmount ? `${formData.salaryAmount} FCFA / ${formData.paymentFrequency?.toLowerCase()}` : (formData.salary || '')),
+              pretentionSalariale: formData.paymentFrequency === 'Contrat' 
+                ? 'Contrat' 
+                : (formData.salaryAmount ? `${formData.salaryAmount} FCFA / ${formData.paymentFrequency?.toLowerCase()}` : (formData.salary || ''))
           }),
           ...(selectedProfile === 'Propriétaire' && {
               equipmentType: formData.equipmentType,
@@ -378,14 +456,17 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               quantity: formData.quantity,
               equipmentCity: formData.equipmentCity,
               rentalPrice: formData.rentalPrice,
-              equipmentDescription: formData.equipmentDescription
+              equipmentDescription: effectiveEquipDesc,
+              description: effectiveEquipDesc
           }),
           ...(selectedProfile === 'Agence' && {
               agencyName: formData.agencyName,
               agencyCity: formData.agencyCity,
               agencyPhone: formData.agencyPhone,
               propertyTypes: formData.propertyTypes,
-              agencyZone: formData.agencyZone
+              agencyZone: formData.agencyZone,
+              agencyDescription: effectiveAgencyDesc,
+              description: effectiveAgencyDesc
           }),
           ...(selectedProfile === 'Entreprise' && {
               companyName: formData.companyName,
@@ -397,9 +478,10 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               companyContractType: formData.companyContractType,
               companySalary: formData.companySalary,
               companyHours: formData.companyHours,
-              companySkills: formData.companySkills,
+              companySkills: effectiveCompanySkills,
+              companyServices: effectiveCompanySkills,
+              description: effectiveCompanySkills,
               companyDomain: formData.companyPoste,
-              companyServices: formData.companySkills,
               proposedSalary: formData.companySalary
           })
         };
@@ -506,21 +588,28 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
         return (
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Métier *</label>
-              <input 
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Métier *</label>
+              <SuggestiveAutocompleteInput 
                 id="job"
-                type="text"
                 value={formData.job}
-                onChange={(e) => {
-                    setFormData({...formData, job: e.target.value});
+                onChange={(val) => {
+                    const autoDesc = generateWorkerDescription(val);
+                    setFormData({
+                      ...formData, 
+                      job: val,
+                      skillsDescription: autoDesc
+                    });
                     if (errors.includes('job')) setErrors(errors.filter(e => e !== 'job'));
+                    if (errors.includes('skillsDescription')) setErrors(errors.filter(e => e !== 'skillsDescription'));
                 }}
-                placeholder="Ex: Électricien, Menuisier..."
-                className={getInputClass('job')}
+                placeholder="Ex: Coiffeur, Électricien, Maçon..."
+                catalog={JOB_SUGGESTIONS}
+                typeLabel="Métier"
+                inputClassName={getInputClass('job')}
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">A appris : *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">A appris : *</label>
               <div className="relative">
                 <select
                   value={formData.learnedFrom || ''}
@@ -539,7 +628,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Disponibilité *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Disponibilité *</label>
               <div className="relative">
                 <select
                   value={formData.availability || ''}
@@ -557,7 +646,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Zone de déplacement *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Zone de déplacement *</label>
               <CityAutocompleteInput 
                 id="movementZone"
                 value={formData.movementZone}
@@ -570,31 +659,90 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Description du savoir-faire *</label>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] block">
+                  Description du savoir-faire *
+                </label>
+                <span className="text-[9px] font-bold text-amber-200 bg-black/25 px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Automatique
+                </span>
+              </div>
               <textarea 
                 id="skillsDescription"
-                value={formData.skillsDescription}
-                onChange={(e) => {
-                    setFormData({...formData, skillsDescription: e.target.value});
-                    if (errors.includes('skillsDescription')) setErrors(errors.filter(e => e !== 'skillsDescription'));
-                }}
-                placeholder="Décrivez vos compétences..."
-                className={`${getInputClass('skillsDescription')} min-h-[80px]`}
+                value={formData.skillsDescription || generateWorkerDescription(formData.job)}
+                readOnly
+                placeholder="La description se génère automatiquement selon votre métier..."
+                className={`w-full bg-white text-slate-900 border-2 rounded-2xl py-3 px-4 font-bold text-sm outline-none cursor-not-allowed select-text min-h-[80px] shadow-sm transition-all ${
+                  errors.includes('skillsDescription') ? 'border-red-500 bg-red-50' : 'border-blue-400'
+                }`}
               />
+              <p className="text-[10px] font-medium text-white/90 mt-1 ml-1 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-white/80" /> Description générée automatiquement (non modifiable)
+              </p>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Prétention salariale ou Tarif *</label>
-              <input 
-                id="salary"
-                type="text"
-                value={formData.salary}
-                onChange={(e) => {
-                    setFormData({...formData, salary: e.target.value});
-                    if (errors.includes('salary')) setErrors(errors.filter(e => e !== 'salary'));
-                }}
-                placeholder="Ex: 5 000 FCFA / jour ou 150 000 FCFA / mois"
-                className={getInputClass('salary')}
-              />
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">
+                Vous souhaitez être payé par… *
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                {(['Semaine', 'Mois', 'Jour', 'Contrat'] as const).map((freq) => (
+                  <button
+                    key={freq}
+                    type="button"
+                    onClick={() => {
+                      setFormData({
+                        ...formData,
+                        paymentFrequency: freq,
+                        salaryAmount: freq === 'Contrat' ? '' : formData.salaryAmount,
+                        salary: freq === 'Contrat' ? 'Contrat' : formData.salary
+                      });
+                      if (errors.includes('paymentFrequency')) {
+                        setErrors(errors.filter(e => e !== 'paymentFrequency'));
+                      }
+                      if (freq === 'Contrat' && errors.includes('salaryAmount')) {
+                        setErrors(errors.filter(e => e !== 'salaryAmount'));
+                      }
+                    }}
+                    className={`py-3 px-3 rounded-2xl font-black text-xs uppercase tracking-wider transition-all border text-center cursor-pointer ${
+                      formData.paymentFrequency === freq
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-[1.02]'
+                        : 'bg-white text-slate-800 border-white hover:bg-slate-50'
+                    } ${errors.includes('paymentFrequency') ? 'border-red-500 bg-red-50' : ''}`}
+                  >
+                    {freq}
+                  </button>
+                ))}
+              </div>
+
+              {formData.paymentFrequency && formData.paymentFrequency !== 'Contrat' && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                  <label className="text-[10px] font-black text-white uppercase tracking-widest ml-1 mb-1 block">
+                    Montant souhaité ({formData.paymentFrequency.toLowerCase()}) en FCFA *
+                  </label>
+                  <div className="relative">
+                    <input 
+                      id="salaryAmount"
+                      type="number"
+                      min="0"
+                      value={formData.salaryAmount}
+                      onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({
+                            ...formData, 
+                            salaryAmount: val,
+                            salary: val ? `${val} FCFA / ${formData.paymentFrequency.toLowerCase()}` : ''
+                          });
+                          if (errors.includes('salaryAmount')) setErrors(errors.filter(e => e !== 'salaryAmount'));
+                      }}
+                      placeholder={`Ex: ${formData.paymentFrequency === 'Jour' ? '5000' : formData.paymentFrequency === 'Semaine' ? '25000' : '100000'}`}
+                      className={`${getInputClass('salaryAmount')} pr-16 font-bold`}
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-black text-slate-500 select-none">
+                      FCFA
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -602,20 +750,28 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
         return (
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type d’équipement *</label>
-              <input 
-                type="text"
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type d’équipement *</label>
+              <SuggestiveAutocompleteInput 
+                id="equipmentType"
                 value={formData.equipmentType}
-                onChange={(e) => {
-                    setFormData({...formData, equipmentType: e.target.value});
+                onChange={(val) => {
+                    const autoDesc = generateEquipmentDescription(val);
+                    setFormData({
+                      ...formData, 
+                      equipmentType: val,
+                      equipmentDescription: autoDesc
+                    });
                     if (errors.includes('equipmentType')) setErrors(errors.filter(e => e !== 'equipmentType'));
+                    if (errors.includes('equipmentDescription')) setErrors(errors.filter(e => e !== 'equipmentDescription'));
                 }}
-                placeholder="Ex: Bétonnière, Échafaudage..."
-                className={getInputClass('equipmentType')}
+                placeholder="Ex: Bétonnière, Échafaudage, Groupe électrogène..."
+                catalog={EQUIPMENT_SUGGESTIONS}
+                typeLabel="Équipement"
+                inputClassName={getInputClass('equipmentType')}
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Catégorie d’équipement *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Catégorie d’équipement *</label>
               <input 
                 type="text"
                 value={formData.equipmentCategory}
@@ -628,7 +784,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Quantité disponible *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Quantité disponible *</label>
               <input 
                 type="number"
                 inputMode="numeric"
@@ -643,7 +799,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville où l'équipement est situé *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville où l'équipement est situé *</label>
               <CityAutocompleteInput 
                 id="equipmentCity"
                 value={formData.equipmentCity || ''}
@@ -656,7 +812,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Prix de location en 1 jour *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Prix de location en 1 jour *</label>
               <input 
                 type="text"
                 inputMode="decimal"
@@ -671,16 +827,26 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Description de l’équipement *</label>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] block">
+                  Description de l’équipement *
+                </label>
+                <span className="text-[9px] font-bold text-amber-200 bg-black/25 px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Automatique
+                </span>
+              </div>
               <textarea 
-                value={formData.equipmentDescription}
-                onChange={(e) => {
-                    setFormData({...formData, equipmentDescription: e.target.value});
-                    if (errors.includes('equipmentDescription')) setErrors(errors.filter(e => e !== 'equipmentDescription'));
-                }}
-                placeholder="Détails techniques, état..."
-                className={`${getInputClass('equipmentDescription')} min-h-[80px]`}
+                id="equipmentDescription"
+                value={formData.equipmentDescription || generateEquipmentDescription(formData.equipmentType)}
+                readOnly
+                placeholder="La description se génère automatiquement selon votre équipement..."
+                className={`w-full bg-white text-slate-900 border-2 rounded-2xl py-3 px-4 font-bold text-sm outline-none cursor-not-allowed select-text min-h-[80px] shadow-sm transition-all ${
+                  errors.includes('equipmentDescription') ? 'border-red-500 bg-red-50' : 'border-blue-400'
+                }`}
               />
+              <p className="text-[10px] font-medium text-white/90 mt-1 ml-1 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-white/80" /> Description générée automatiquement (non modifiable)
+              </p>
             </div>
           </div>
         );
@@ -688,12 +854,18 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
         return (
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom de l'agence *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom de l'agence *</label>
               <input 
                 type="text"
                 value={formData.agencyName}
                 onChange={(e) => {
-                    setFormData({...formData, agencyName: e.target.value});
+                    const newName = e.target.value;
+                    const autoDesc = generateAgencyDescription(formData.propertyTypes, newName);
+                    setFormData({
+                      ...formData, 
+                      agencyName: newName,
+                      agencyDescription: autoDesc
+                    });
                     if (errors.includes('agencyName')) setErrors(errors.filter(e => e !== 'agencyName'));
                 }}
                 placeholder="Nom de votre agence"
@@ -701,7 +873,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville où l'agence est située *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville où l'agence est située *</label>
               <CityAutocompleteInput 
                 id="agencyCity"
                 value={formData.agencyCity || ''}
@@ -714,9 +886,9 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Numéro de l’agence *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Numéro de l’agence *</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-gray-400 select-none flex items-center gap-1">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-500 select-none flex items-center gap-1">
                   <span>🇨🇮</span>
                   <span>+225</span>
                 </span>
@@ -736,12 +908,18 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de biens proposés : *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de biens proposés : *</label>
               <div className="relative">
                 <select
                   value={formData.propertyTypes || ''}
                   onChange={(e) => {
-                      setFormData({...formData, propertyTypes: e.target.value});
+                      const newType = e.target.value;
+                      const autoDesc = generateAgencyDescription(newType, formData.agencyName);
+                      setFormData({
+                        ...formData, 
+                        propertyTypes: newType,
+                        agencyDescription: autoDesc
+                      });
                       if (errors.includes('propertyTypes')) setErrors(errors.filter(e => e !== 'propertyTypes'));
                   }}
                   className={`${getInputClass('propertyTypes')} appearance-none pr-10 cursor-pointer`}
@@ -759,7 +937,27 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Zone d’activité *</label>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] block">
+                  Présentation de l'agence *
+                </label>
+                <span className="text-[9px] font-bold text-amber-200 bg-black/25 px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Automatique
+                </span>
+              </div>
+              <textarea 
+                id="agencyDescription"
+                value={formData.agencyDescription || generateAgencyDescription(formData.propertyTypes, formData.agencyName)}
+                readOnly
+                placeholder="La présentation se génère automatiquement selon les biens proposés..."
+                className="w-full bg-white text-slate-900 border-2 border-blue-400 rounded-2xl py-3 px-4 font-bold text-sm outline-none cursor-not-allowed select-text min-h-[80px] shadow-sm"
+              />
+              <p className="text-[10px] font-medium text-white/90 mt-1 ml-1 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-white/80" /> Présentation générée automatiquement (non modifiable)
+              </p>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Zone d’activité *</label>
               <CityAutocompleteInput 
                 id="agencyZone"
                 value={formData.agencyZone}
@@ -777,12 +975,18 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
         return (
           <div className="space-y-4">
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom de l'entreprise *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom de l'entreprise *</label>
               <input 
                 type="text"
                 value={formData.companyName}
                 onChange={(e) => {
-                    setFormData({...formData, companyName: e.target.value});
+                    const newName = e.target.value;
+                    const autoDesc = generateCompanyDescription(formData.companyPoste, newName);
+                    setFormData({
+                      ...formData, 
+                      companyName: newName,
+                      companySkills: autoDesc
+                    });
                     if (errors.includes('companyName')) setErrors(errors.filter(e => e !== 'companyName'));
                 }}
                 placeholder="Ex: BTP Services CI"
@@ -790,7 +994,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom du responsable ou propriétaire *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nom du responsable ou propriétaire *</label>
               <input 
                 type="text"
                 value={formData.companyOwner}
@@ -803,7 +1007,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville de l’entreprise *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Ville de l’entreprise *</label>
               <CityAutocompleteInput 
                 id="companyCity"
                 value={formData.companyCity || ''}
@@ -816,9 +1020,9 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Numéro de l’entreprise *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Numéro de l’entreprise *</label>
               <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-gray-400 select-none flex items-center gap-1">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-500 select-none flex items-center gap-1">
                   <span>🇨🇮</span>
                   <span>+225</span>
                 </span>
@@ -838,20 +1042,28 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Poste recherché *</label>
-              <input 
-                type="text"
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Poste recherché *</label>
+              <SuggestiveAutocompleteInput 
+                id="companyPoste"
                 value={formData.companyPoste}
-                onChange={(e) => {
-                    setFormData({...formData, companyPoste: e.target.value});
+                onChange={(val) => {
+                    const autoDesc = generateCompanyDescription(val, formData.companyName);
+                    setFormData({
+                      ...formData, 
+                      companyPoste: val,
+                      companySkills: autoDesc
+                    });
                     if (errors.includes('companyPoste')) setErrors(errors.filter(e => e !== 'companyPoste'));
+                    if (errors.includes('companySkills')) setErrors(errors.filter(e => e !== 'companySkills'));
                 }}
-                placeholder="Ex: Serveur, Cuisinier, Livreur..."
-                className={getInputClass('companyPoste')}
+                placeholder="Ex: Serveur, Cuisinier, Livreur, Chauffeur..."
+                catalog={JOB_SUGGESTIONS}
+                typeLabel="Poste / Métier"
+                inputClassName={getInputClass('companyPoste')}
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nombre de travailleurs recherchés *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Nombre de travailleurs recherchés *</label>
               <input 
                 type="number"
                 min="1"
@@ -865,7 +1077,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de contrat *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Type de contrat *</label>
               <div className="relative">
                 <select
                   value={formData.companyContractType}
@@ -886,7 +1098,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Salaire proposé *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Salaire proposé *</label>
               <input 
                 type="text"
                 value={formData.companySalary}
@@ -899,7 +1111,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Horaires de travail *</label>
+              <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] ml-1 mb-1.5 block">Horaires de travail *</label>
               <input 
                 type="text"
                 value={formData.companyHours}
@@ -912,16 +1124,26 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black text-slate-800 uppercase tracking-[0.15em] ml-1 mb-1.5 block">Compétences recherchées *</label>
+              <div className="flex items-center justify-between mb-1.5 ml-1">
+                <label className="text-[10px] font-black text-white uppercase tracking-[0.15em] block">
+                  Compétences & Description du poste *
+                </label>
+                <span className="text-[9px] font-bold text-amber-200 bg-black/25 px-2 py-0.5 rounded-full flex items-center gap-1 backdrop-blur-sm">
+                  <Sparkles className="w-2.5 h-2.5 text-amber-300" /> Automatique
+                </span>
+              </div>
               <textarea 
-                value={formData.companySkills}
-                onChange={(e) => {
-                    setFormData({...formData, companySkills: e.target.value});
-                    if (errors.includes('companySkills')) setErrors(errors.filter(e => e !== 'companySkills'));
-                }}
-                placeholder="Ex: Ponctualité, rigueur, expérience en vente..."
-                className={`${getInputClass('companySkills')} min-h-[90px]`}
+                id="companySkills"
+                value={formData.companySkills || generateCompanyDescription(formData.companyPoste, formData.companyName)}
+                readOnly
+                placeholder="La description du poste se génère automatiquement selon l'activité et le poste..."
+                className={`w-full bg-white text-slate-900 border-2 rounded-2xl py-3 px-4 font-bold text-sm outline-none cursor-not-allowed select-text min-h-[90px] shadow-sm transition-all ${
+                  errors.includes('companySkills') ? 'border-red-500 bg-red-50' : 'border-blue-400'
+                }`}
               />
+              <p className="text-[10px] font-medium text-white/90 mt-1 ml-1 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-white/80" /> Description générée automatiquement (non modifiable)
+              </p>
             </div>
           </div>
         );
@@ -963,97 +1185,97 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
   const isStep2Form = step === 2 && !isSaved;
 
   return (
-    <div className={`flex flex-col h-full font-sans overflow-y-auto scrollbar-hide transition-colors duration-300 ${isStep2Form ? 'bg-white text-slate-900' : 'bg-[#0f172a] text-white'}`}>
+    <div className="flex flex-col h-full font-sans overflow-y-auto scrollbar-hide bg-orange-500 text-white">
       {/* Header */}
       {!isStep2Form ? (
-        <header className={`px-6 flex flex-col items-center text-center relative shrink-0 transition-all duration-300 ${isKeyboardVisible ? 'pt-4 pb-2' : 'pt-8 pb-6'}`}>
+        <header className={`px-6 flex flex-col items-center text-center relative shrink-0 transition-all duration-300 ${isKeyboardVisible ? 'pt-4 pb-2' : 'pt-8 pb-6'} bg-orange-500`}>
           <button 
             type="button"
             onClick={handleBackWithConfirmation}
-            className={`absolute left-6 p-2 bg-white/10 rounded-xl active:scale-90 transition-all text-white ${isKeyboardVisible ? 'top-4' : 'top-8'}`}
+            className={`absolute left-6 p-2 bg-white/20 hover:bg-white/30 rounded-xl active:scale-90 transition-all text-white ${isKeyboardVisible ? 'top-4' : 'top-8'}`}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
           <div className="flex items-center gap-1 mb-2">
-            <span className="text-orange-500 font-black text-3xl tracking-tighter transition-all duration-300">FILANT</span>
-            <span className="text-white font-bold text-3xl tracking-tighter opacity-90">225</span>
+            <span className="text-white font-black text-3xl tracking-tighter transition-all duration-300">FILANT</span>
+            <span className="text-white/90 font-bold text-3xl tracking-tighter opacity-90">225</span>
           </div>
-          <h2 className={`font-medium text-white/90 transition-all duration-300 ${isKeyboardVisible ? 'text-xs' : 'text-lg'}`}>Inscription intelligente</h2>
-          <p className={`text-gray-400 text-xs mt-2 max-w-[280px] transition-all duration-300 overflow-hidden ${isKeyboardVisible ? 'h-0 mt-0 opacity-0' : 'h-auto opacity-100'}`}>
+          <h2 className={`font-medium text-white/95 transition-all duration-300 ${isKeyboardVisible ? 'text-xs' : 'text-lg'}`}>Inscription intelligente</h2>
+          <p className={`text-white/90 text-xs mt-2 max-w-[280px] transition-all duration-300 overflow-hidden ${isKeyboardVisible ? 'h-0 mt-0 opacity-0' : 'h-auto opacity-100'}`}>
             Nous vous invitons à vous inscrire sur la plateforme afin d’être rapidement mis en relation avec des clients.
           </p>
-          <p className={`text-gray-500 text-[10px] mt-1 italic font-light tracking-tight transition-all duration-300 overflow-hidden ${isKeyboardVisible ? 'h-0 mt-0 opacity-0' : 'h-auto opacity-100'}`}>
+          <p className={`text-white/80 text-[10px] mt-1 italic font-light tracking-tight transition-all duration-300 overflow-hidden ${isKeyboardVisible ? 'h-0 mt-0 opacity-0' : 'h-auto opacity-100'}`}>
             Frais d’inscription : 310.CFA fin
           </p>
         </header>
       ) : (
-        <header className={`px-6 flex flex-col items-start relative border-b border-slate-100 bg-white shrink-0 transition-all duration-300 ${isKeyboardVisible ? 'pt-3 pb-3' : 'pt-6 pb-4'}`}>
+        <header className={`px-6 flex flex-col items-start relative border-b border-orange-400/50 bg-orange-500 shrink-0 transition-all duration-300 ${isKeyboardVisible ? 'pt-3 pb-3' : 'pt-6 pb-4'}`}>
           <button 
             type="button"
             onClick={() => setStep(1)}
-            className="p-2 bg-slate-100 rounded-xl active:scale-90 transition-all text-slate-800 hover:bg-slate-200"
+            className="p-2 bg-white/20 hover:bg-white/30 rounded-xl active:scale-90 transition-all text-white"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           
           <div className={`text-left transition-all duration-300 overflow-hidden ${isKeyboardVisible ? 'h-0 mt-0 opacity-0' : 'mt-4 h-auto opacity-100'}`}>
-            <h2 className="text-xl font-black text-slate-950 uppercase tracking-tight">INSCRIPTION</h2>
-            <p className="text-slate-500 text-xs mt-1">
-              Complétez vos coordonnées et spécificités de <span className="text-blue-600 font-bold">{selectedProfile}</span>.
+            <h2 className="text-xl font-black text-white uppercase tracking-tight">INSCRIPTION</h2>
+            <p className="text-white/90 text-xs mt-1">
+              Complétez vos coordonnées et spécificités de <span className="text-white font-black underline">{selectedProfile}</span>.
             </p>
           </div>
         </header>
       )}
 
       {/* Main Container */}
-      <main className={`flex-1 flex flex-col ${isStep2Form ? 'p-0 bg-white w-full' : 'px-4 pb-10'}`}>
+      <main className="flex-1 flex flex-col p-0 bg-orange-500 w-full">
         <motion.div 
           key={step}
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: -20 }}
-          className={`flex flex-col flex-1 ${
+          className={`flex flex-col flex-1 bg-orange-500 ${
             isStep2Form 
-              ? 'bg-white p-6 w-full max-w-xl mx-auto' 
-              : 'bg-white rounded-[2.5rem] shadow-2xl p-6 min-h-[500px]'
+              ? 'p-6 w-full max-w-xl mx-auto' 
+              : 'rounded-[2.5rem] p-6 min-h-[500px]'
           }`}
         >
           {/* Connexion Rapide & Progress */}
           <div className="flex justify-between items-center mb-8 px-2 shrink-0">
-            <span className="text-slate-850 font-black text-sm uppercase tracking-wider">
+            <span className="text-white font-black text-sm uppercase tracking-wider">
               {isStep2Form ? "Étape 2 sur 2" : "Connexion rapide"}
             </span>
             <div className="flex gap-1">
-              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${step >= 1 ? 'bg-green-500' : 'bg-gray-200'}`}></div>
-              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${step >= 2 ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
-              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${selectedProfile ? 'bg-green-500' : 'bg-gray-200'}`}></div>
+              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${step >= 1 ? 'bg-white' : 'bg-white/40'}`}></div>
+              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${step >= 2 ? 'bg-blue-600' : 'bg-white/40'}`}></div>
+              <div className={`w-8 h-1.5 rounded-full transition-all duration-500 ${selectedProfile ? 'bg-white' : 'bg-white/40'}`}></div>
             </div>
           </div>
 
           {!isStep2Form && (
             <div className="text-center mb-8 shrink-0">
-              <h1 className="text-slate-900 font-black text-3xl tracking-tighter mb-1 uppercase">INSCRIPTION</h1>
-              <h3 className="text-slate-400 font-bold text-sm tracking-widest uppercase">ÉTAPE {step} : {step === 1 ? 'PROFIL' : 'INFORMATION'}</h3>
+              <h1 className="text-white font-black text-3xl tracking-tighter mb-1 uppercase">INSCRIPTION</h1>
+              <h3 className="text-white/80 font-bold text-sm tracking-widest uppercase">ÉTAPE {step} : {step === 1 ? 'PROFIL' : 'INFORMATION'}</h3>
             </div>
           )}
 
           <div className="flex-1 overflow-y-auto scrollbar-hide px-1">
             {isSaved ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-6 space-y-8 animate-in fade-in zoom-in duration-500">
-                 <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                    <Check className="w-12 h-12 text-green-600 stroke-[3]" />
+                 <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-4">
+                    <Check className="w-12 h-12 text-white stroke-[3]" />
                  </div>
                  <div className="space-y-4">
-                    <h3 className="text-2xl font-black text-slate-900 leading-tight uppercase tracking-tight">Validation Réussie !</h3>
-                    <p className="text-slate-500 font-medium leading-relaxed">
-                      Votre inscription en tant que <span className="text-orange-600 font-black">{selectedProfile}</span> a été enregistrée avec succès.
+                    <h3 className="text-2xl font-black text-white leading-tight uppercase tracking-tight">Validation Réussie !</h3>
+                    <p className="text-white/95 font-medium leading-relaxed">
+                      Votre inscription en tant que <span className="text-white font-black underline">{selectedProfile}</span> a été enregistrée avec succès.
                     </p>
-                    <div className="p-6 bg-orange-50 rounded-3xl border border-orange-100">
-                       <p className="text-orange-900 font-bold text-sm">
+                    <div className="p-6 bg-white/20 rounded-3xl border border-white/30 backdrop-blur-sm">
+                       <p className="text-white font-bold text-sm">
                           Pour finaliser et activer votre mise en ligne, veuillez régler les frais de dossier de :
                        </p>
-                       <p className="text-3xl font-black text-orange-600 mt-2">310 FCFA</p>
+                       <p className="text-3xl font-black text-white mt-2">310 FCFA</p>
                     </div>
                  </div>
 
@@ -1062,7 +1284,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                       type="button"
                       onClick={handlePayRegistration}
                       disabled={paymentInitiated}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black py-5 rounded-3xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50"
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-3xl flex items-center justify-center gap-3 shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest disabled:opacity-50 cursor-pointer"
                     >
                       {paymentInitiated ? 'Redirection Wave...' : 'Payer les frais (310 FCFA)'}
                       {!paymentInitiated && <ArrowRight className="w-5 h-5" />}
@@ -1077,17 +1299,17 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                     <button
                       type="button"
                       onClick={handleModify}
-                      className="w-full py-4 rounded-3xl border-2 border-slate-100 text-slate-400 font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                      className="w-full py-4 rounded-3xl border-2 border-white/30 text-white font-black text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Briefcase className="w-3 h-3" />
                       Modifier mes informations
                     </button>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center mt-2">Paiement sécurisé via Wave</p>
+                    <p className="text-[10px] text-white/80 font-bold uppercase tracking-widest text-center mt-2">Paiement sécurisé via Wave</p>
                  </div>
               </div>
             ) : step === 1 ? (
               <div className="px-2 mb-6">
-                <h4 className="text-slate-600 font-black text-xs uppercase tracking-[0.2em] mb-4">QUI ÊTES-VOUS ?</h4>
+                <h4 className="text-white font-black text-xs uppercase tracking-[0.2em] mb-4">QUI ÊTES-VOUS ?</h4>
                 
                 <div className="grid grid-cols-2 gap-3">
                   {profiles.map((profile) => (
@@ -1100,22 +1322,22 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                       }}
                       className={`
                         relative p-4 rounded-3xl border-2 transition-all duration-300 text-left flex flex-col justify-between h-[120px]
-                        ${!profile.active ? 'bg-slate-50 border-slate-100 opacity-60' : 
-                          selectedProfile === profile.id ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-500/10' : 'bg-slate-50 border-slate-200'}
+                        ${!profile.active ? 'bg-white/60 border-white/40 opacity-60' : 
+                          selectedProfile === profile.id ? 'bg-white border-white ring-4 ring-blue-600/30' : 'bg-white/90 border-white hover:bg-white'}
                       `}
                     >
-                      <div className={`p-2 rounded-xl w-fit ${selectedProfile === profile.id && profile.active ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                      <div className={`p-2 rounded-xl w-fit ${selectedProfile === profile.id && profile.active ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
                         {profile.icon}
                       </div>
                       
                       <div className="mt-2 text-wrap">
-                        <p className={`text-[10px] font-black leading-tight uppercase ${selectedProfile === profile.id && profile.active ? 'text-orange-600' : 'text-slate-500'}`}>
+                        <p className={`text-[10px] font-black leading-tight uppercase ${selectedProfile === profile.id && profile.active ? 'text-blue-700' : 'text-slate-700'}`}>
                           {profile.label}
                         </p>
                       </div>
 
                       {selectedProfile === profile.id && profile.active && (
-                        <div className="absolute top-2 right-2 w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center shadow-lg">
+                        <div className="absolute top-2 right-2 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center shadow-lg">
                           <Check className="w-3 h-3 text-white stroke-[4]" />
                         </div>
                       )}
@@ -1125,34 +1347,34 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
               </div>
             ) : (
               <div className="px-2 mb-6 space-y-6">
-                <h4 className="text-slate-800 font-black text-xs uppercase tracking-[0.2em] mb-4">VOS DÉTAILS PERSONNELS</h4>
+                <h4 className="text-white font-black text-xs uppercase tracking-[0.2em] mb-4">VOS DÉTAILS PERSONNELS</h4>
                 
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-[10px] font-black text-slate-700 uppercase tracking-[0.12em] ml-1 mb-1.5 block">Nom complet (fixé)</label>
+                      <label className="text-[10px] font-black text-white uppercase tracking-[0.12em] ml-1 mb-1.5 block">Nom complet (fixé)</label>
                       <input 
                         type="text"
                         value={formData.name}
                         readOnly
-                        className="w-full bg-slate-150 border-2 border-slate-300 rounded-2xl py-3 px-4 text-slate-800 font-black text-xs outline-none cursor-not-allowed opacity-90"
+                        className="w-full bg-white border-2 border-white rounded-2xl py-3 px-4 text-black font-black text-xs outline-none cursor-not-allowed opacity-95"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-black text-slate-700 uppercase tracking-[0.12em] ml-1 mb-1.5 block">Ville actuelle (fixée)</label>
+                      <label className="text-[10px] font-black text-white uppercase tracking-[0.12em] ml-1 mb-1.5 block">Ville actuelle (fixée)</label>
                       <input 
                         type="text"
                         value={formData.city}
                         readOnly
-                        className="w-full bg-slate-150 border-2 border-slate-300 rounded-2xl py-3 px-4 text-slate-800 font-black text-xs outline-none cursor-not-allowed opacity-90"
+                        className="w-full bg-white border-2 border-white rounded-2xl py-3 px-4 text-black font-black text-xs outline-none cursor-not-allowed opacity-95"
                       />
                     </div>
                   </div>
 
                   <div>
-                     <label className="text-[10px] font-black text-slate-700 uppercase tracking-[0.12em] ml-1 mb-1.5 block">Numéro personnel (fixé)</label>
-                     <div className="relative bg-slate-150 border-2 border-slate-300 rounded-2xl flex items-center opacity-90">
-                       <span className="pl-4 text-xs font-black text-slate-400 select-none flex items-center gap-1.5 flex-shrink-0">
+                     <label className="text-[10px] font-black text-white uppercase tracking-[0.12em] ml-1 mb-1.5 block">Numéro personnel (fixé)</label>
+                     <div className="relative bg-white border-2 border-white rounded-2xl flex items-center opacity-95">
+                       <span className="pl-4 text-xs font-black text-slate-500 select-none flex items-center gap-1.5 flex-shrink-0">
                          <span>🇨🇮</span>
                          <span>+225</span>
                        </span>
@@ -1160,40 +1382,40 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                          type="text"
                          value={formData.phone}
                          readOnly
-                         className="w-full bg-transparent py-3 pl-4 pr-4 text-slate-800 font-black text-xs outline-none cursor-not-allowed"
+                         className="w-full bg-transparent py-3 pl-4 pr-4 text-black font-black text-xs outline-none cursor-not-allowed"
                        />
                      </div>
                   </div>
 
-                  <div className="h-[2px] bg-slate-100 my-4"></div>
+                  <div className="h-[2px] bg-white/20 my-4"></div>
 
-                  <h4 className="text-slate-800 font-black text-xs uppercase tracking-[0.2em] mb-4">Spécificités {selectedProfile}</h4>
+                  <h4 className="text-white font-black text-xs uppercase tracking-[0.2em] mb-4">Spécificités {selectedProfile}</h4>
 
                   {renderCategoryFields()}
 
                   {/* Photos Upload Section (Up to 3 photos) */}
-                  <div className="mt-6 pt-6 border-t border-slate-200">
+                  <div className="mt-6 pt-6 border-t border-white/20">
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-[11px] font-black text-slate-800 uppercase tracking-[0.15em] flex items-center gap-2">
-                        <Camera className="w-4 h-4 text-blue-600 shrink-0" />
+                      <label className="text-[11px] font-black text-white uppercase tracking-[0.15em] flex items-center gap-2">
+                        <Camera className="w-4 h-4 text-white shrink-0" />
                         <span>{getPhotosConfig().title}</span>
                       </label>
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full shrink-0">
+                      <span className="text-[10px] font-bold text-white bg-white/20 px-2.5 py-1 rounded-full shrink-0">
                         {(formData.photos || []).length} / 3
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mb-3 font-medium leading-relaxed">
+                    <p className="text-[11px] text-white/90 mb-3 font-medium leading-relaxed">
                       {getPhotosConfig().description}
                     </p>
 
                     <div className="grid grid-cols-3 gap-3">
                       {(formData.photos || []).map((photoUrl, idx) => (
-                        <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border-2 border-slate-200 shadow-sm group">
+                        <div key={idx} className="relative aspect-square rounded-2xl overflow-hidden border-2 border-white/40 shadow-sm group">
                           <img src={photoUrl} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
                           <button
                             type="button"
                             onClick={() => handleRemovePhoto(idx)}
-                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-700 transition-all active:scale-90"
+                            className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md hover:bg-red-700 transition-all active:scale-90 cursor-pointer"
                             title="Supprimer la photo"
                           >
                             <X className="w-3.5 h-3.5 stroke-[3]" />
@@ -1205,7 +1427,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                       ))}
 
                       {(formData.photos || []).length < 3 && (
-                        <label className={`aspect-square rounded-2xl border-2 border-dashed border-blue-400 hover:border-blue-600 bg-blue-50/50 hover:bg-blue-50 flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 text-blue-600 ${isCompressingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <label className={`aspect-square rounded-2xl border-2 border-dashed border-white/60 hover:border-white bg-white/20 hover:bg-white/30 flex flex-col items-center justify-center cursor-pointer transition-all active:scale-95 text-white ${isCompressingPhotos ? 'opacity-50 pointer-events-none' : ''}`}>
                           <input 
                             type="file" 
                             accept="image/*" 
@@ -1216,12 +1438,12 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                           />
                           {isCompressingPhotos ? (
                             <div className="flex flex-col items-center gap-1">
-                              <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                               <span className="text-[9px] font-bold uppercase">Optimisation...</span>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center gap-1.5 text-center p-2">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-blue-600">
                                 <Upload className="w-4 h-4" />
                               </div>
                               <span className="text-[10px] font-black uppercase tracking-wider">Ajouter photo</span>
@@ -1244,12 +1466,12 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 10 }}
-                    className="mb-4 p-3 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3"
+                    className="mb-4 p-3 bg-red-600/90 border border-white/30 rounded-2xl flex items-center gap-3 text-white shadow-lg backdrop-blur-sm"
                   >
-                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-white text-[10px] font-black">!</span>
+                    <div className="w-5 h-5 bg-white text-red-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-[10px] font-black">!</span>
                     </div>
-                    <p className="text-red-600 text-[10px] font-bold uppercase tracking-tight">
+                    <p className="text-white text-[10px] font-black uppercase tracking-tight">
                       Veuillez remplir tous les champs obligatoires (*)
                     </p>
                   </motion.div>
@@ -1259,7 +1481,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                 type="button"
                 onClick={handleNext}
                 disabled={isSubmitting}
-                className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-50 active:scale-95 transition-all text-white font-black py-5 rounded-3xl flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(249,115,22,0.3)]"
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 active:scale-95 transition-all text-white font-black py-5 rounded-3xl flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(37,99,235,0.4)] cursor-pointer"
               >
                 {isSubmitting ? (
                    <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
@@ -1274,7 +1496,7 @@ const SmartRegistrationScreen: React.FC<SmartRegistrationScreenProps> = ({
                 <button 
                   type="button"
                   onClick={() => setStep(1)}
-                  className="w-full mt-4 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-slate-600 transition-colors"
+                  className="w-full mt-4 text-white/90 font-bold text-xs uppercase tracking-widest hover:text-white transition-colors cursor-pointer"
                 >
                   Retour
                 </button>

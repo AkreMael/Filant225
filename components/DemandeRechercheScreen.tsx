@@ -2234,10 +2234,14 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               return (
                 <button
                   onClick={() => {
-                    if (onShowRegistration) onShowRegistration();
-                    else handleOpenOnlineForm();
+                    if (onShowRegistration) {
+                      onShowRegistration();
+                    } else {
+                      window.dispatchEvent(new CustomEvent('open-smart-registration'));
+                      handleOpenOnlineForm();
+                    }
                   }}
-                  className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-orange-500 hover:bg-orange-600 text-white cursor-pointer"
+                  className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
                 >
                   <span className="w-2.5 h-2.5 bg-white rounded-full shrink-0" />
                   <span>📝 S'inscrire sur FILANT°225 (310 FCFA)</span>

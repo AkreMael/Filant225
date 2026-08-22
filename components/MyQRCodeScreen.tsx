@@ -13,7 +13,7 @@ interface MyQRCodeScreenProps {
   user: User;
   onBack: () => void;
   onTriggerPayment: (context: any) => void;
-  onStartRegistration: () => void;
+  onStartRegistration: (profile?: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise') => void;
 }
 
 const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTriggerPayment, onStartRegistration }) => {
@@ -277,21 +277,76 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
               </div>
 
               <div className="mt-8 p-5 bg-slate-50 rounded-3xl border border-dashed border-gray-200">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 text-center">Statut Actuel</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center">Statut Actuel</p>
                   {qrData?.requiresRegistration || (currentStatus && currentStatus.includes("Inscrivez-vous")) ? (
-                    <div className="text-center space-y-2">
+                    <div className="text-center space-y-3">
                       <p className="text-[11px] font-bold text-slate-900 leading-tight">
                         Inscrivez-vous maintenant pour accéder aux missions, services et mises en relation disponibles sur FILANT°225.
                       </p>
-                      <div className="space-y-0.5">
-                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-tighter">📌 Travailleurs</p>
-                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-tighter">📌 Équipements</p>
-                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-tighter">📌 Agences immobilières</p>
-                        <p className="text-[10px] font-black text-orange-600 uppercase tracking-tighter">📌 Entreprises</p>
+                      
+                      <div className="grid grid-cols-2 gap-2 my-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Travailleur', step: 2 } }));
+                            onStartRegistration('Travailleur');
+                          }}
+                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                        >
+                          <span>📌</span>
+                          <span className="truncate">Travailleur</span>
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Propriétaire', step: 2 } }));
+                            onStartRegistration('Propriétaire');
+                          }}
+                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                        >
+                          <span>📌</span>
+                          <span className="truncate">Équipement</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Agence', step: 2 } }));
+                            onStartRegistration('Agence');
+                          }}
+                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[10px] uppercase tracking-tight rounded-xl shadow-sm transition-all flex items-center justify-center gap-1 cursor-pointer text-center"
+                        >
+                          <span>📌</span>
+                          <span className="truncate">Agence immobilière</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Entreprise', step: 2 } }));
+                            onStartRegistration('Entreprise');
+                          }}
+                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                        >
+                          <span>📌</span>
+                          <span className="truncate">Entreprise</span>
+                        </button>
                       </div>
-                      <p className="text-[11px] font-black text-orange-600 uppercase mt-2">
-                        💳 Inscription : 310 FCFA seulement
-                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { step: 1 } }));
+                          onStartRegistration();
+                        }}
+                        className="w-full text-center py-2 px-3 mt-1 rounded-xl bg-orange-50 hover:bg-orange-100 active:scale-98 transition-all border border-orange-200 cursor-pointer block group"
+                      >
+                        <p className="text-[11px] font-black text-orange-600 uppercase tracking-tight flex items-center justify-center gap-1.5 group-hover:text-orange-700">
+                          <span>💳</span>
+                          <span>Inscription : 310 FCFA seulement</span>
+                        </p>
+                      </button>
                     </div>
                   ) : (
                     currentStatus.includes("En attente paiement activation") ? (
@@ -342,6 +397,21 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
               </div>
           </div>
 
+          {/* Main Action Button (Inscrivez-vous / Frais de dossier / Activer) moved to top */}
+          {!isActive && (
+              <div className="mb-8 w-full">
+                  <button 
+                    onClick={handleAction}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-[2rem] shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest flex items-center justify-center gap-3"
+                  >
+                    {step === 1 ? 'Commencer Inscription' : 
+                     step === 2 ? 'Payer Frais Dossier (310 CFA)' : 
+                     'Activer mon QR Code (7 100 CFA)'}
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7-7 7" /></svg>
+                  </button>
+              </div>
+          )}
+
           {/* QR Code Container */}
           <div className="flex flex-col items-center text-center">
               <div className={`relative p-8 rounded-[3rem] bg-white shadow-2xl transition-all duration-700 ${isActive ? 'opacity-100 scale-100' : 'opacity-40 scale-95 blur-sm grayscale'}`}>
@@ -360,20 +430,8 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
                    />
               </div>
 
-              <div className="mt-10 w-full">
-                  {!isActive ? (
-                      <div className="space-y-4">
-                          <button 
-                            onClick={handleAction}
-                            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-black py-5 rounded-[2rem] shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest flex items-center justify-center gap-3"
-                          >
-                            {step === 1 ? 'Commencer Inscription' : 
-                             step === 2 ? 'Payer Frais Dossier (310 CFA)' : 
-                             'Activer mon QR Code (7 100 CFA)'}
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7-7 7" /></svg>
-                          </button>
-                      </div>
-                  ) : (
+              <div className="mt-8 w-full">
+                  {isActive && (
                       <>
                       <div className="bg-green-500 rounded-[2.5rem] p-6 text-white shadow-xl text-center relative overflow-hidden group">
                           <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-125 transition-transform duration-700"></div>

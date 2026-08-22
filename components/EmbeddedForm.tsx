@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../types';
 import SpeakerIcon from './common/SpeakerIcon';
 import CityAutocompleteInput from './common/CityAutocompleteInput';
+import SuggestiveAutocompleteInput, { JOB_SUGGESTIONS, EQUIPMENT_SUGGESTIONS } from './common/SuggestiveAutocompleteInput';
 import { getQuestionsForType, generateWhatsAppMessage, calculateTotalPrice, Answers, AnswerValue, getFormImage } from './common/formDefinitions';
 import { databaseService } from '../services/databaseService';
 import { audioService } from '../services/audioService';
@@ -734,6 +735,24 @@ const EmbeddedForm: React.FC<EmbeddedFormProps> = ({
                                           value={inputValue}
                                           onChange={setInputValue}
                                           placeholder={currentQuestion.placeholder || "..."}
+                                          inputClassName="bg-transparent w-full py-3 text-sm font-bold text-gray-800 outline-none"
+                                        />
+                                      ) : currentQuestion.key === 'workerTitle' || currentQuestion.key === 'serviceNeeded' ? (
+                                        <SuggestiveAutocompleteInput
+                                          value={inputValue}
+                                          onChange={setInputValue}
+                                          placeholder={currentQuestion.placeholder || "Ex: Coiffeur, Électricien, Maçon..."}
+                                          catalog={JOB_SUGGESTIONS}
+                                          typeLabel="Métier"
+                                          inputClassName="bg-transparent w-full py-3 text-sm font-bold text-gray-800 outline-none"
+                                        />
+                                      ) : currentQuestion.key === 'equipmentType' || currentQuestion.key === 'equipment' ? (
+                                        <SuggestiveAutocompleteInput
+                                          value={inputValue}
+                                          onChange={setInputValue}
+                                          placeholder={currentQuestion.placeholder || "Ex: Bétonnière, Échafaudage..."}
+                                          catalog={EQUIPMENT_SUGGESTIONS}
+                                          typeLabel="Équipement"
                                           inputClassName="bg-transparent w-full py-3 text-sm font-bold text-gray-800 outline-none"
                                         />
                                       ) : (

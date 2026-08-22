@@ -340,6 +340,9 @@ const App: React.FC = () => {
 
   // RAW states (do not push to history when set directly during popping/restoring)
   const [showSmartRegistrationRaw, setShowSmartRegistrationRaw] = useState(false);
+  const [registrationProfile, setRegistrationProfile] = useState<'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise' | undefined>(undefined);
+  const [registrationTitle, setRegistrationTitle] = useState<string | undefined>(undefined);
+  const [registrationStep, setRegistrationStep] = useState<number | undefined>(undefined);
   const [showFullRegistrationRaw, setShowFullRegistrationRaw] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -632,6 +635,15 @@ const App: React.FC = () => {
       setShowFullRegistrationRaw(nextVal);
     }
   }, [pushStateToHistory]);
+
+  const startRegistrationWithProfile = useCallback((profile?: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title?: string) => {
+    setRegistrationProfile(profile);
+    setRegistrationTitle(title);
+    setRegistrationStep(profile ? 2 : 1);
+    setBlockedView(null);
+    setShowFullRegistration(true);
+    setShowSmartRegistration(true);
+  }, [setShowFullRegistration, setShowSmartRegistration]);
 
   const setAdminChatContext = useCallback((val: any | ((prev: any) => any)) => {
     const nextVal = typeof val === 'function' ? val(stateRef.current.adminChatContext) : val;
@@ -1213,11 +1225,24 @@ const App: React.FC = () => {
       }
     };
 
+    const handleOpenRegistrationEvent = (e?: any) => {
+      const profile = e?.detail?.profile;
+      const title = e?.detail?.title;
+      const targetStep = e?.detail?.step || (profile ? 2 : 1);
+      setRegistrationProfile(profile);
+      setRegistrationTitle(title);
+      setRegistrationStep(targetStep);
+      setBlockedView(null);
+      setShowFullRegistration(true);
+      setShowSmartRegistration(true);
+    };
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.addEventListener('message', handleSWMessage);
     }
     window.addEventListener('deep-link-navigation' as any, handleDeepLinkEvent as any);
     window.addEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
+    window.addEventListener('open-smart-registration' as any, handleOpenRegistrationEvent as any);
 
     // Process initial URL if opened via notification link (e.g. from background / closed state)
     if (window.location.search) {
@@ -1234,6 +1259,7 @@ const App: React.FC = () => {
       }
       window.removeEventListener('deep-link-navigation' as any, handleDeepLinkEvent as any);
       window.removeEventListener('navigate-to-chat' as any, handleNavigateToChat as any);
+      window.removeEventListener('open-smart-registration' as any, handleOpenRegistrationEvent as any);
     };
   }, [handleDeepLink]);
 
@@ -1577,10 +1603,14 @@ const App: React.FC = () => {
       navigateTo({ activeTab: Tab.Menu, menuView: view });
   };
 
+  const handleOpenOnlineProviders = useCallback(() => {
+    navigateTo({ activeTab: Tab.Menu, menuView: 'demande_recherche' });
+  }, [navigateTo]);
+
   const handleOpenSiteWorkers = useCallback(() => {
     setShopCategory('travailleurs');
     navigateTo({ activeTab: Tab.Offer, offerSubView: 'shop', menuView: 'hub' });
-  }, []);
+  }, [navigateTo]);
 
   const handleHomeNavigate = (view: any, category?: 'appartement' | 'equipement') => {
       if (view === 'location_hub' && category) {
@@ -1775,6 +1805,10 @@ const App: React.FC = () => {
                   <FirstLaunchScreen onComplete={handleFirstLaunchComplete} />
                 ) : (
                   <SmartRegistrationScreen 
+                    currentUser={currentUser}
+                    initialProfile={registrationProfile}
+                    initialStep={registrationStep}
+                    initialTitle={registrationTitle}
                     onComplete={handleSmartRegistrationComplete} 
                     onBack={() => setShowSmartRegistration(false)} 
                     onShowPopup={showPopup}
@@ -1863,6 +1897,8 @@ const App: React.FC = () => {
                 showPopup("Contact de l'assistance en cours...", "alert");
             }}
             onOpenSiteWorkers={handleOpenSiteWorkers}
+            onOpenOnlineProviders={handleOpenOnlineProviders}
+            onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
             onOpenForm={(context) => setInteractiveModalContext(context)}
           />;
           break;
@@ -1874,6 +1910,8 @@ const App: React.FC = () => {
             onPropose={(url, title) => {
                 showPopup("Contact de l'agence en cours...", "alert");
             }}
+            onOpenOnlineProviders={handleOpenOnlineProviders}
+            onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
             onOpenForm={(context) => setInteractiveModalContext(context)}
           />;
           break;
@@ -1925,7 +1963,10 @@ const App: React.FC = () => {
               handleTabChange(tab);
             }}
             initialQuery={demandeRechercheInitialQuery}
-            onShowRegistration={() => setShowSmartRegistration(true)}
+            onShowRegistration={() => {
+              setShowFullRegistration(true);
+              setShowSmartRegistration(true);
+            }}
           />;
           break;
         case 'admin_dashboard':
@@ -1971,7 +2012,7 @@ const App: React.FC = () => {
         user={displayUser!} 
         onBack={() => setActiveTab(Tab.Menu)} 
         onTriggerPayment={(context) => setPaymentConfirmationContext(context)}
-        onStartRegistration={() => setShowFullRegistration(true)}
+        onStartRegistration={(profile) => startRegistrationWithProfile(profile)}
       />;
       break;
     case Tab.Offer:
@@ -2114,7 +2155,7 @@ const App: React.FC = () => {
             user={displayUser!} 
             onBack={() => setBlockedView('lock')} 
             onTriggerPayment={(context) => setPaymentConfirmationContext(context)}
-            onStartRegistration={() => {}}
+            onStartRegistration={(profile) => startRegistrationWithProfile(profile)}
           />
         </div>
       );
@@ -2139,6 +2180,11 @@ const App: React.FC = () => {
             onBack={() => setBlockedView('lock')} 
             user={displayUser} 
             onSelectTab={() => {}}
+            onShowRegistration={() => {
+              setBlockedView(null);
+              setShowFullRegistration(true);
+              setShowSmartRegistration(true);
+            }}
           />
         </div>
       );
@@ -2296,7 +2342,7 @@ const App: React.FC = () => {
           user={displayUser!} 
           onBack={() => setBlockedView('lock')} 
           onTriggerPayment={(context) => setPaymentConfirmationContext(context)}
-          onStartRegistration={() => setShowFullRegistration(true)}
+          onStartRegistration={(profile) => startRegistrationWithProfile(profile)}
         />
       );
     } else if (blockedView === 'services') {
@@ -2318,6 +2364,11 @@ const App: React.FC = () => {
             if (tab === Tab.UserChat) {
               setBlockedView('messagerie');
             }
+          }}
+          onShowRegistration={() => {
+            setBlockedView(null);
+            setShowFullRegistration(true);
+            setShowSmartRegistration(true);
           }}
         />
       );
@@ -2508,6 +2559,9 @@ const App: React.FC = () => {
             >
               <SmartRegistrationScreen 
                 currentUser={currentUser}
+                initialProfile={registrationProfile}
+                initialStep={registrationStep}
+                initialTitle={registrationTitle}
                 onComplete={() => {
                     setShowFullRegistration(false);
                     // Trigger payment process after registration
@@ -2836,6 +2890,9 @@ const App: React.FC = () => {
                 >
                   <SmartRegistrationScreen 
                     currentUser={currentUser}
+                    initialProfile={registrationProfile}
+                    initialStep={registrationStep}
+                    initialTitle={registrationTitle}
                     onComplete={() => {
                         setShowFullRegistration(false);
                         // Trigger payment process after registration
