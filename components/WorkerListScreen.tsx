@@ -11,7 +11,11 @@ import {
   AlreadyRegisteredModal, 
   ProviderAvailabilityModal, 
   matchInscriptionsForTitle, 
-  isUserRegistrationOnline 
+  isUserRegistrationOnline,
+  getProviderName,
+  getProviderMetier,
+  getProviderCity,
+  getProviderAmount
 } from './common/OnlineStatusModal';
 
 // --- ICONS (Matching the provided mockup) ---
@@ -305,7 +309,7 @@ interface WorkerCardProps {
   inscriptionsList: any[];
   currentUserInscription?: any;
   onShowAlreadyRegistered: () => void;
-  onShowProviderAvailability: (info: { title: string; count: number; onServiceClient: () => void }) => void;
+  onShowProviderAvailability: (info: { title: string; providers: any[]; onServiceClient: (selectedProvider?: any) => void }) => void;
 }
 
 const VerifiedBadge = () => (
@@ -367,8 +371,24 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
     const matching = matchInscriptionsForTitle(displayName, inscriptionsList);
     onShowProviderAvailability({
       title: displayName,
-      count: matching.length,
-      onServiceClient: handleDemandeClick
+      providers: matching,
+      onServiceClient: (selectedProvider?: any) => {
+        if (selectedProvider) {
+          const provName = getProviderName(selectedProvider);
+          const provMetier = getProviderMetier(selectedProvider, displayName);
+          const provCity = getProviderCity(selectedProvider);
+          const provAmount = getProviderAmount(selectedProvider);
+
+          onOpenForm({
+            formType: worker.formType || 'worker',
+            title: `${displayName} (${provName})`,
+            imageUrl: selectedProvider.profileImageUrl || selectedProvider.imageLink || imageSrc,
+            description: `Demande de mise en relation adressée à : ${provName} - ${provMetier} (${provCity}) | Montant proposé : ${provAmount}`
+          });
+        } else {
+          handleDemandeClick();
+        }
+      }
     });
   };
 
@@ -482,12 +502,12 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
   const [availabilityModalData, setAvailabilityModalData] = useState<{
     isOpen: boolean;
     title: string;
-    count: number;
-    onServiceClient: () => void;
+    providers: any[];
+    onServiceClient: (selectedProvider?: any) => void;
   }>({
     isOpen: false,
     title: '',
-    count: 0,
+    providers: [],
     onServiceClient: () => {}
   });
 
@@ -696,7 +716,7 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
                           setAvailabilityModalData({
                             isOpen: true,
                             title: info.title,
-                            count: info.count,
+                            providers: info.providers,
                             onServiceClient: info.onServiceClient
                           });
                         }}
@@ -729,7 +749,7 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
         isOpen={availabilityModalData.isOpen}
         onClose={() => setAvailabilityModalData(prev => ({ ...prev, isOpen: false }))}
         title={availabilityModalData.title}
-        foundCount={availabilityModalData.count}
+        providers={availabilityModalData.providers}
         onOpenServiceClient={availabilityModalData.onServiceClient}
       />
     </div>

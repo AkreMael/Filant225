@@ -9,7 +9,11 @@ import {
   AlreadyRegisteredModal, 
   ProviderAvailabilityModal, 
   matchInscriptionsForTitle, 
-  isUserRegistrationOnline 
+  isUserRegistrationOnline,
+  getProviderName,
+  getProviderMetier,
+  getProviderCity,
+  getProviderAmount
 } from './common/OnlineStatusModal';
 
 // --- ICONS ---
@@ -177,7 +181,7 @@ interface LocationCardProps {
   inscriptionsList: any[];
   currentUserInscription?: any;
   onShowAlreadyRegistered: () => void;
-  onShowProviderAvailability: (info: { title: string; count: number; onServiceClient: () => void }) => void;
+  onShowProviderAvailability: (info: { title: string; providers: any[]; onServiceClient: (selectedProvider?: any) => void }) => void;
 }
 
 const LocationCard: React.FC<LocationCardProps> = ({ 
@@ -233,8 +237,25 @@ const LocationCard: React.FC<LocationCardProps> = ({
     const matching = matchInscriptionsForTitle(item.title, inscriptionsList);
     onShowProviderAvailability({
       title: item.title,
-      count: matching.length,
-      onServiceClient: handleDemandeClick
+      providers: matching,
+      onServiceClient: (selectedProvider?: any) => {
+        if (selectedProvider) {
+          const provName = getProviderName(selectedProvider);
+          const provMetier = getProviderMetier(selectedProvider, item.title);
+          const provCity = getProviderCity(selectedProvider);
+          const provAmount = getProviderAmount(selectedProvider);
+          const src = Array.isArray(equipmentImgData) ? equipmentImgData[currentImgIndex] : (equipmentImgData || "");
+
+          onOpenForm({
+            formType: 'location',
+            title: `${item.title} (${provName})`,
+            imageUrl: selectedProvider.profileImageUrl || selectedProvider.imageLink || (typeof src === 'string' ? src : src[0]),
+            description: `Demande de mise en relation adressée à : ${provName} - ${provMetier} (${provCity}) | Montant proposé : ${provAmount}`
+          });
+        } else {
+          handleDemandeClick();
+        }
+      }
     });
   };
 
@@ -341,12 +362,12 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
   const [availabilityModalData, setAvailabilityModalData] = useState<{
     isOpen: boolean;
     title: string;
-    count: number;
-    onServiceClient: () => void;
+    providers: any[];
+    onServiceClient: (selectedProvider?: any) => void;
   }>({
     isOpen: false,
     title: '',
-    count: 0,
+    providers: [],
     onServiceClient: () => {}
   });
 
@@ -515,7 +536,7 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
                   setAvailabilityModalData({
                     isOpen: true,
                     title: info.title,
-                    count: info.count,
+                    providers: info.providers,
                     onServiceClient: info.onServiceClient
                   });
                 }}
@@ -546,7 +567,7 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
         isOpen={availabilityModalData.isOpen}
         onClose={() => setAvailabilityModalData(prev => ({ ...prev, isOpen: false }))}
         title={availabilityModalData.title}
-        foundCount={availabilityModalData.count}
+        providers={availabilityModalData.providers}
         onOpenServiceClient={availabilityModalData.onServiceClient}
       />
     </div>
