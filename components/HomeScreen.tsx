@@ -1240,6 +1240,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [user?.phone]);
 
   const [inscriptionData, setInscriptionData] = useState<any>(null);
+  const [qrData, setQrData] = useState<any>(null);
 
   const [isInscriptionValidated, setIsInscriptionValidated] = useState<boolean>(() => {
     return localStorage.getItem(`filant_inscription_validated_${user?.phone || ''}`) === 'true';
@@ -1253,6 +1254,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
 
   // Online profile expiration and status calculations (1 month = 30 days)
   const now = Date.now();
+  const isDeactivated = inscriptionData?.isActive === false || 
+    inscriptionData?.visibilityStatus === 'desactive' ||
+    inscriptionData?.status === 'Désactivé' ||
+    qrData?.isActive === false ||
+    qrData?.visibilityStatus === 'desactive' ||
+    qrData?.status === 'Désactivé';
+
   const hasInscription = !!inscriptionData && (!!inscriptionData.profileType || !!inscriptionData.submittedAt || hasSubmittedForm);
   const isValidatedStatus = inscriptionData?.status === 'Actif' || 
     inscriptionData?.registrationStatus === 'validated' || 
@@ -1260,20 +1268,33 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     isInscriptionValidated;
 
   const onlineEnd = inscriptionData?.onlineEnd;
-  const isOnlineExpired = hasInscription && (
+  const isOnlineExpired = !isDeactivated && hasInscription && (
     (onlineEnd ? now > onlineEnd : false) ||
-    (isValidatedStatus && inscriptionData?.isOnline === false)
+    (isValidatedStatus && inscriptionData?.isOnline === false) ||
+    inscriptionData?.status === 'Expiré' ||
+    inscriptionData?.visibilityStatus === 'expire'
   );
 
-  const isProfileOnline = hasInscription && 
+  const isProfileOnline = !isDeactivated && hasInscription && 
     !isOnlineExpired && 
     (inscriptionData?.isOnline === true || inscriptionData?.onlineApproved === true || (isValidatedStatus && !isOnlineExpired));
 
-  const isProfilePending = hasInscription && !isProfileOnline && !isOnlineExpired && (
+  const isProfilePending = !isDeactivated && hasInscription && !isProfileOnline && !isOnlineExpired && (
     inscriptionData?.onlinePending === true || 
     inscriptionData?.registrationStatus === 'pending' || 
     hasSubmittedForm
   );
+
+  const handleActivateQR = () => {
+    window.dispatchEvent(new CustomEvent('trigger-payment-view', {
+      detail: {
+        title: "Activation Code QR",
+        amount: "7100",
+        waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100",
+        paymentType: "Activation"
+      }
+    }));
+  };
 
   const handleRenewOnline = () => {
     if (!user?.phone) return;
@@ -1306,8 +1327,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
     const unsubQr = onSnapshot(qrRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        setQrData(data);
         const status = data?.status || '';
-        const isInactive = data?.active === false || data?.isDeleted === true || status.includes("Désactivé") || status.includes("Inactif") || status.includes("Supprimé");
+        const isInactive = data?.active === false || data?.isActive === false || data?.visibilityStatus === 'desactive' || data?.isDeleted === true || status.includes("Désactivé") || status.includes("Inactif") || status.includes("Supprimé");
 
         // Expiration calculation (30 days = 30 * 86400 * 1000 ms)
         const now = Date.now();
@@ -1537,7 +1559,25 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
 
             {/* Grand bouton INSCRIVEZ VOTRE DOMAINE / FINALISER L'INSCRIPTION / INSCRIPTION VALIDÉE / RENOUVELER VOTRE MISE EN LIGNE sous la section Profil */}
             <div className="px-4 mt-2 mb-1">
-                {isOnlineExpired ? (
+                {isDeactivated ? (
+                    <div className="w-full bg-red-50/95 border-2 border-red-200 rounded-3xl p-4 sm:p-5 text-center space-y-3.5 shadow-md">
+                        <div className="w-10 h-10 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <p className="text-xs sm:text-sm font-black text-red-900 leading-relaxed">
+                            Votre première mise en relation gratuite est atteinte. Veuillez activer votre code QR pour être mis en relation avec les clients. Votre profil est actuellement désactivé. Veuillez activer votre code QR pour continuer à être mis en relation avec les clients.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={handleActivateQR}
+                            className="w-full py-3.5 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-red-500"
+                        >
+                            <span>CLIQUEZ ICI</span>
+                        </button>
+                    </div>
+                ) : isOnlineExpired ? (
                     <button 
                         onClick={handleRenewOnline}
                         className="w-full py-3 px-4 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:to-amber-600 active:scale-[0.98] transition-all duration-200 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-md shadow-orange-500/20 flex items-center justify-center gap-2.5 cursor-pointer border border-orange-400/30 group animate-pulse"
