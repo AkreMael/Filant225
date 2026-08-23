@@ -568,19 +568,54 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                       
                       {!isAdmin && msg.sender === 'admin' && (msg.paymentInfo || msg.whatsAppPayload || msg.providerPhone) && (
                         <div className="mt-4 pt-3.5 border-t border-[#00000010] dark:border-[#ffffff10] flex flex-col gap-2.5">
-                          {msg.providerPhone && (
-                            <a
-                              id={`call_btn_${messageId}`}
-                              href={`tel:${msg.providerPhone.replace(/\D/g, '').startsWith('225') ? '+' + msg.providerPhone.replace(/\D/g, '') : '+225' + msg.providerPhone.replace(/\D/g, '')}`}
-                              className="w-full bg-[#00a884] hover:bg-[#008f72] text-white font-black py-3 px-4 rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all active:scale-[0.98] no-underline cursor-pointer"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Phone className="w-4 h-4 text-white fill-white" />
-                              <span className="uppercase tracking-wider text-[11px]">
-                                Appeler le prestataire
-                              </span>
-                            </a>
-                          )}
+                          {msg.providerPhone && (() => {
+                            const rawDigits = msg.providerPhone.replace(/\D/g, '');
+                            const telDigits = rawDigits.startsWith('225') ? `+${rawDigits}` : `+225${rawDigits}`;
+                            const waDigits = rawDigits.startsWith('225') ? rawDigits : `225${rawDigits}`;
+                            const localDigits = rawDigits.startsWith('225') ? rawDigits.slice(3) : rawDigits;
+                            const formattedDisplay = localDigits.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1 $2 $3 $4 $5');
+
+                            return (
+                              <div className="flex flex-col gap-2.5 pt-1">
+                                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800 text-center">
+                                  <span className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300 tracking-wider block">
+                                    Numéro du prestataire
+                                  </span>
+                                  <span className="text-sm font-black text-emerald-950 dark:text-white tracking-widest block mt-0.5">
+                                    +225 {formattedDisplay}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <a
+                                    id={`call_btn_${messageId}`}
+                                    href={`tel:${telDigits}`}
+                                    className="bg-[#00a884] hover:bg-[#008f72] text-white font-black py-3 px-3 rounded-2xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] no-underline cursor-pointer text-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Phone className="w-4 h-4 text-white fill-white shrink-0" />
+                                    <span className="uppercase tracking-wider text-[11px] truncate">
+                                      Appeler
+                                    </span>
+                                  </a>
+
+                                  <a
+                                    id={`wa_prov_btn_${messageId}`}
+                                    href={`https://wa.me/${waDigits}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-[#16a34a] hover:bg-[#15803d] text-white font-black py-3 px-3 rounded-2xl shadow-md flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] no-underline cursor-pointer text-center"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <WhatsAppIcon />
+                                    <span className="uppercase tracking-wider text-[11px] truncate">
+                                      WhatsApp
+                                    </span>
+                                  </a>
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {msg.paymentInfo && (
                             <button 
