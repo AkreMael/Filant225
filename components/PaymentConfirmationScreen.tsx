@@ -390,17 +390,20 @@ const PaymentConfirmationScreen: React.FC<PaymentConfirmationScreenProps> = ({
         try {
           const now = new Date();
           const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+          await databaseService.setProfileActiveStatus(user.phone, true, 'active');
           await databaseService.updateQRCodeActivation(user.phone, {
             status: "Code QR Actif",
             isVerified: true,
+            isActive: true,
+            visibilityStatus: "active",
             expiryDate: expiryDate.toISOString(),
             activationDate: now.toISOString(),
           });
-          console.log("Updated QRCodeActivation to: Code QR Actif for", user.phone);
+          console.log("Updated QRCodeActivation and Profile to: Code QR Actif for", user.phone);
         } catch (qrErr) {
           console.error("Error updating QR Code Activation instantly during wallet payment:", qrErr);
         }
-      } else if (paymentType === 'Renouvellement' || needed === 500) {
+      } else if (paymentType === 'Renouvellement' || needed === 500 || needed === 210) {
         try {
           const now = new Date();
           const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);

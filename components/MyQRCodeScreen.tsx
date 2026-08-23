@@ -287,14 +287,14 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
                 </svg>
               </div>
               <p className="text-xs sm:text-sm font-black text-red-900 leading-relaxed">
-                Votre quota de mises en relation gratuites avec les clients est atteint. Veuillez activer votre code QR afin que les clients puissent continuer à voir votre profil et vous contacter pour vos services.
+                Votre première mise en relation gratuite est atteinte. Veuillez activer votre code QR pour être mis en relation avec les clients. Votre profil est actuellement désactivé. Veuillez activer votre code QR pour continuer à être mis en relation avec les clients.
               </p>
               <button
                 type="button"
                 onClick={handleAction}
                 className="w-full py-4 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-red-500"
               >
-                <span>Cliquez ici pour activer votre code QR</span>
+                <span>Cliquez ici</span>
               </button>
             </div>
           ) : isQrExpired ? (
