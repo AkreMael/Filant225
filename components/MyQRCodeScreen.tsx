@@ -165,24 +165,30 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
     return `Profil: ${profileType}\nActivité/Identité: ${displayProfession}\nNom: ${name}\nVille: ${city}`;
   };
 
+  const isDeactivated = qrData?.isActive === false || qrData?.visibilityStatus === 'desactive';
+
   const isQrExpired = useMemo(() => {
+    if (isDeactivated) return false;
     if (!qrData) return false;
-    if (qrData.status === 'Expiré' || (qrData.status && qrData.status.includes('renouvellement'))) return true;
+    if (qrData.status === 'Expiré' || qrData.visibilityStatus === 'expire' || (qrData.status && qrData.status.includes('renouvellement'))) return true;
     const now = Date.now();
     if (qrData.expiryDate) {
       const exp = new Date(qrData.expiryDate).getTime();
       if (!isNaN(exp) && exp < now) return true;
+    } else if (qrData.onlineEnd) {
+      if (typeof qrData.onlineEnd === 'number' && qrData.onlineEnd < now) return true;
     } else if (qrData.activationDate) {
       const act = new Date(qrData.activationDate).getTime();
       if (!isNaN(act) && (now - act > 30 * 24 * 3600 * 1000)) return true;
     }
     return false;
-  }, [qrData]);
+  }, [qrData, isDeactivated]);
 
   const currentStatus = qrData?.status || "Inscrivez-vous maintenant pour accéder aux missions, services et mises en relation disponibles sur FILANT°225.\n\n📌 Travailleurs\n📌 Équipements\n📌 Agences immobilières\n📌 Entreprises\n\n💳 Inscription : 310 FCFA seulement";
-  const isActive = currentStatus === "Code QR Actif" && !isQrExpired;
+  const isActive = !isDeactivated && !isQrExpired && (currentStatus === "Code QR Actif" || qrData?.isOnline === true);
   
   const getStepNumber = () => {
+      if (isDeactivated) return 3;
       if (isQrExpired) return 5;
       if (qrData?.requiresRegistration) return 1;
       if (qrData?.fraisDossierPayes === true) {
@@ -202,18 +208,32 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
 
   const activePendingForCurrentStep = useMemo(() => {
     if (!pendingPayments || pendingPayments.length === 0) return null;
-    if (step === 2) {
-      return pendingPayments.find(p => p.amount == 310 || p.paymentType === 'Inscription' || (p.title && p.title.includes('310')));
-    } else if (step === 3) {
+    if (isDeactivated || step === 3) {
       return pendingPayments.find(p => p.amount == 7100 || p.paymentType === 'Activation' || (p.title && (p.title.includes('7100') || p.title.includes('7 100'))));
-    } else if (step === 5) {
-      return pendingPayments.find(p => p.amount == 500 || p.paymentType === 'Renouvellement' || (p.title && p.title.includes('500')));
+    } else if (isQrExpired || step === 5) {
+      return pendingPayments.find(p => p.amount == 210 || p.amount == 500 || p.paymentType === 'Renouvellement' || (p.title && (p.title.includes('210') || p.title.includes('500') || p.title.toLowerCase().includes('renouvel'))));
+    } else if (step === 2) {
+      return pendingPayments.find(p => p.amount == 310 || p.paymentType === 'Inscription' || (p.title && p.title.includes('310')));
     }
     return null;
-  }, [pendingPayments, step]);
+  }, [pendingPayments, step, isDeactivated, isQrExpired]);
 
   const handleAction = () => {
-      if (step === 1) {
+      if (isDeactivated) {
+          onTriggerPayment({
+              title: "Activation Code QR",
+              amount: "7100",
+              waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100",
+              paymentType: "Activation"
+          });
+      } else if (isQrExpired) {
+          onTriggerPayment({
+              title: "Renouvellement mise en ligne",
+              amount: "210",
+              waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210",
+              paymentType: "Renouvellement de profil"
+          });
+      } else if (step === 1) {
           onStartRegistration();
       } else if (step === 2) {
           onTriggerPayment({
@@ -224,17 +244,17 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
           });
       } else if (step === 3) {
           onTriggerPayment({
-              title: "Activation QR Code",
+              title: "Activation Code QR",
               amount: "7100",
               waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100",
               paymentType: "Activation"
           });
       } else if (step === 5) {
           onTriggerPayment({
-              title: "Renouvellement QR Code",
-              amount: "500",
-              waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=500",
-              paymentType: "Renouvellement"
+              title: "Renouvellement mise en ligne",
+              amount: "210",
+              waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210",
+              paymentType: "Renouvellement de profil"
           });
       }
   };
@@ -258,6 +278,43 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
       </header>
 
       <main className="flex-1 overflow-y-auto p-6">
+          {/* DEACTIVATED OR EXPIRED BANNER AT THE TOP */}
+          {isDeactivated ? (
+            <div className="bg-red-50 border-2 border-red-200 rounded-3xl p-5 text-center space-y-4 shadow-sm mb-8">
+              <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-xs sm:text-sm font-black text-red-900 leading-relaxed">
+                Votre quota de mises en relation gratuites avec les clients est atteint. Veuillez activer votre code QR afin que les clients puissent continuer à voir votre profil et vous contacter pour vos services.
+              </p>
+              <button
+                type="button"
+                onClick={handleAction}
+                className="w-full py-4 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-red-500"
+              >
+                <span>Cliquez ici pour activer votre code QR</span>
+              </button>
+            </div>
+          ) : isQrExpired ? (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-5 text-center space-y-4 shadow-sm mb-8">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <Clock size={24} className="stroke-[2.5]" />
+              </div>
+              <p className="text-xs sm:text-sm font-black text-amber-900 leading-relaxed">
+                La date d’expiration de votre mise en ligne est arrivée. Veuillez effectuer à nouveau le paiement de 210 FCFA pour renouveler votre mise en ligne pendant un mois.
+              </p>
+              <button
+                type="button"
+                onClick={handleAction}
+                className="w-full py-4 px-4 bg-orange-600 hover:bg-orange-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-orange-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-orange-500"
+              >
+                <span>Renouveler maintenant</span>
+              </button>
+            </div>
+          ) : null}
+
           {/* Status Tracker */}
           <div className="bg-white rounded-[2.5rem] p-6 shadow-xl border border-gray-100 mb-8">
               <div className="flex justify-between items-center mb-6">
@@ -276,129 +333,131 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
                   ))}
               </div>
 
-              <div className="mt-8 p-5 bg-slate-50 rounded-3xl border border-dashed border-gray-200">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center">Statut Actuel</p>
-                  {qrData?.requiresRegistration || (currentStatus && currentStatus.includes("Inscrivez-vous")) ? (
-                    <div className="text-center space-y-3">
-                      <p className="text-[11px] font-bold text-slate-900 leading-tight">
-                        Inscrivez-vous maintenant pour accéder aux missions, services et mises en relation disponibles sur FILANT°225.
-                      </p>
-                      
-                      <div className="grid grid-cols-2 gap-2 my-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Travailleur', step: 2 } }));
-                            onStartRegistration('Travailleur');
-                          }}
-                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                        >
-                          <span>📌</span>
-                          <span className="truncate">Travailleur</span>
-                        </button>
+              {!isDeactivated && !isQrExpired && (
+                <div className="mt-8 p-5 bg-slate-50 rounded-3xl border border-dashed border-gray-200">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center">Statut Actuel</p>
+                    {qrData?.requiresRegistration || (currentStatus && currentStatus.includes("Inscrivez-vous")) ? (
+                      <div className="text-center space-y-3">
+                        <p className="text-[11px] font-bold text-slate-900 leading-tight">
+                          Inscrivez-vous maintenant pour accéder aux missions, services et mises en relation disponibles sur FILANT°225.
+                        </p>
                         
-                        <button
-                          type="button"
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Propriétaire', step: 2 } }));
-                            onStartRegistration('Propriétaire');
-                          }}
-                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                        >
-                          <span>📌</span>
-                          <span className="truncate">Équipement</span>
-                        </button>
+                        <div className="grid grid-cols-2 gap-2 my-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Travailleur', step: 2 } }));
+                              onStartRegistration('Travailleur');
+                            }}
+                            className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                          >
+                            <span>📌</span>
+                            <span className="truncate">Travailleur</span>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Propriétaire', step: 2 } }));
+                              onStartRegistration('Propriétaire');
+                            }}
+                            className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                          >
+                            <span>📌</span>
+                            <span className="truncate">Équipement</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Agence', step: 2 } }));
+                              onStartRegistration('Agence');
+                            }}
+                            className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[10px] uppercase tracking-tight rounded-xl shadow-sm transition-all flex items-center justify-center gap-1 cursor-pointer text-center"
+                          >
+                            <span>📌</span>
+                            <span className="truncate">Agence immobilière</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Entreprise', step: 2 } }));
+                              onStartRegistration('Entreprise');
+                            }}
+                            className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
+                          >
+                            <span>📌</span>
+                            <span className="truncate">Entreprise</span>
+                          </button>
+                        </div>
 
                         <button
                           type="button"
                           onClick={() => {
-                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Agence', step: 2 } }));
-                            onStartRegistration('Agence');
+                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { step: 1 } }));
+                            onStartRegistration();
                           }}
-                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[10px] uppercase tracking-tight rounded-xl shadow-sm transition-all flex items-center justify-center gap-1 cursor-pointer text-center"
+                          className="w-full text-center py-2 px-3 mt-1 rounded-xl bg-orange-50 hover:bg-orange-100 active:scale-98 transition-all border border-orange-200 cursor-pointer block group"
                         >
-                          <span>📌</span>
-                          <span className="truncate">Agence immobilière</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { profile: 'Entreprise', step: 2 } }));
-                            onStartRegistration('Entreprise');
-                          }}
-                          className="w-full py-2.5 px-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-[11px] uppercase tracking-wide rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center"
-                        >
-                          <span>📌</span>
-                          <span className="truncate">Entreprise</span>
+                          <p className="text-[11px] font-black text-orange-600 uppercase tracking-tight flex items-center justify-center gap-1.5 group-hover:text-orange-700">
+                            <span>💳</span>
+                            <span>Inscription : 310 FCFA seulement</span>
+                          </p>
                         </button>
                       </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.dispatchEvent(new CustomEvent('open-smart-registration', { detail: { step: 1 } }));
-                          onStartRegistration();
-                        }}
-                        className="w-full text-center py-2 px-3 mt-1 rounded-xl bg-orange-50 hover:bg-orange-100 active:scale-98 transition-all border border-orange-200 cursor-pointer block group"
-                      >
-                        <p className="text-[11px] font-black text-orange-600 uppercase tracking-tight flex items-center justify-center gap-1.5 group-hover:text-orange-700">
-                          <span>💳</span>
-                          <span>Inscription : 310 FCFA seulement</span>
-                        </p>
-                      </button>
-                    </div>
-                  ) : (
-                    currentStatus.includes("En attente paiement activation") ? (
-                      <p className="text-center font-black text-xs leading-normal whitespace-pre-line text-green-600">
-                        {"🎊 Votre profil est maintenant actif.\nVous bénéficiez actuellement d’une première mission gratuite.\nPour augmenter votre visibilité, recevoir plus de clients et accéder aux opportunités complètes de FILANT°225, activez votre Code QR professionnel pour 7 100 FCFA."}
-                      </p>
                     ) : (
-                      <p className={`text-center font-black text-sm leading-tight whitespace-pre-line ${isActive ? 'text-green-600 uppercase' : 'text-orange-600'}`}>
-                          {currentStatus}
-                      </p>
-                    )
-                  )}
-                  {activePendingForCurrentStep && (
-                    <div className="mt-3">
-                      <WhatsAppPaymentSupportButton
-                        serviceName={
-                          activePendingForCurrentStep.title ||
-                          activePendingForCurrentStep.serviceType ||
-                          activePendingForCurrentStep.paymentType ||
-                          (step === 2 ? "Frais de dossier Inscription" :
-                           step === 3 ? "Activation Code QR Professionnel" :
-                           step === 5 ? "Renouvellement Carte FILANT°225" :
-                           "Validation Paiement FILANT°225")
-                        }
-                        amount={
-                          activePendingForCurrentStep.amount || (
-                            step === 2 ? 310 :
-                            step === 3 ? 7100 :
-                            step === 5 ? 500 : 0
-                          )
-                        }
-                        paymentRef={activePendingForCurrentStep.rtdbPath || activePendingForCurrentStep.id}
-                        waveLink={
-                          activePendingForCurrentStep.waveLink || (
-                            step === 2 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310" :
-                            step === 3 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100" :
-                            "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=500"
-                          )
-                        }
-                      />
-                    </div>
-                  )}
-                  {qrData?.expiryDate && isActive && (
-                      <p className="text-center text-[10px] font-bold text-gray-400 mt-2">
-                          Expire le : {new Date(qrData.expiryDate).toLocaleDateString('fr-FR')}
-                      </p>
-                  )}
-              </div>
+                      currentStatus.includes("En attente paiement activation") ? (
+                        <p className="text-center font-black text-xs leading-normal whitespace-pre-line text-green-600">
+                          {"🎊 Votre profil est maintenant actif.\nVous bénéficiez actuellement d’une première mission gratuite.\nPour augmenter votre visibilité, recevoir plus de clients et accéder aux opportunités complètes de FILANT°225, activez votre Code QR professionnel pour 7 100 FCFA."}
+                        </p>
+                      ) : (
+                        <p className={`text-center font-black text-sm leading-tight whitespace-pre-line ${isActive ? 'text-green-600 uppercase' : 'text-orange-600'}`}>
+                            {currentStatus}
+                        </p>
+                      )
+                    )}
+                    {activePendingForCurrentStep && (
+                      <div className="mt-3">
+                        <WhatsAppPaymentSupportButton
+                          serviceName={
+                            activePendingForCurrentStep.title ||
+                            activePendingForCurrentStep.serviceType ||
+                            activePendingForCurrentStep.paymentType ||
+                            (step === 2 ? "Frais de dossier Inscription" :
+                             step === 3 ? "Activation Code QR Professionnel" :
+                             step === 5 ? "Renouvellement Carte FILANT°225" :
+                             "Validation Paiement FILANT°225")
+                          }
+                          amount={
+                            activePendingForCurrentStep.amount || (
+                              step === 2 ? 310 :
+                              step === 3 ? 7100 :
+                              step === 5 ? 210 : 0
+                            )
+                          }
+                          paymentRef={activePendingForCurrentStep.rtdbPath || activePendingForCurrentStep.id}
+                          waveLink={
+                            activePendingForCurrentStep.waveLink || (
+                              step === 2 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=310" :
+                              step === 3 ? "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100" :
+                              "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210"
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+                    {qrData?.expiryDate && isActive && (
+                        <p className="text-center text-[10px] font-bold text-gray-400 mt-2">
+                            Expire le : {new Date(qrData.expiryDate).toLocaleDateString('fr-FR')}
+                        </p>
+                    )}
+                </div>
+              )}
           </div>
 
           {/* Main Action Button (Inscrivez-vous / Frais de dossier / Activer) moved to top */}
-          {!isActive && (
+          {!isActive && !isDeactivated && !isQrExpired && (
               <div className="mb-8 w-full">
                   <button 
                     onClick={handleAction}
@@ -451,15 +510,6 @@ const MyQRCodeScreen: React.FC<MyQRCodeScreenProps> = ({ user, onBack, onTrigger
                          )}
                       </button>
                       </>
-                  )}
-
-                  {step === 5 && (
-                      <button 
-                         onClick={handleAction}
-                         className="w-full mt-4 bg-blue-600 text-white font-black py-5 rounded-[2rem] shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest"
-                      >
-                         Renouveler ma mise en relation (500 CFA)
-                      </button>
                   )}
               </div>
           </div>

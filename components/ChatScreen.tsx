@@ -7,7 +7,7 @@ import { Linkify } from '../utils/textUtils';
 import SpeakerIcon from './common/SpeakerIcon';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import VoiceRecorder from './VoiceRecorder';
-import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone, Loader2 } from 'lucide-react';
+import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone, Loader2, RotateCcw } from 'lucide-react';
 
 interface ChatMessage {
   id?: string;
@@ -18,6 +18,11 @@ interface ChatMessage {
   whatsAppPayload?: string;
   providerPhone?: string;
   serviceStatus?: string;
+  profileType?: string;
+  providerData?: any;
+  prestatairePhone?: string;
+  prestataireName?: string;
+  canRetryWithSalary?: boolean;
   isRead?: boolean;
   adminReadStatus?: 'LU' | 'NON LU' | 'VU';
   type?: string;
@@ -505,7 +510,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
               const messageId = msg.id || `msg_${idx}`;
               const isSelected = selectedIds.includes(messageId);
               
-              const messageText = msg.text || msg.message || msg.whatsappMessage || "";
+              const rawMessageText = msg.text || msg.message || msg.whatsappMessage || "";
+              const messageText = msg.providerPhone
+                ? rawMessageText
+                    .replace(/directement au\s*:\s*\n*(📞\s*)?\+?225[\s\d]+/gi, 'directement :')
+                    .replace(/\n*(📞\s*)?\+?225[\s\d]{8,18}/g, '')
+                    .trim()
+                : rawMessageText;
               const content: React.ReactNode = <Linkify text={messageText} />;
               
               // Date separator check
@@ -640,6 +651,35 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                               <span className="uppercase tracking-wider text-[10px]">WhatsApp (Conseiller)</span>
                             </button>
                           )}
+                        </div>
+                      )}
+
+                      {!isAdmin && msg.sender === 'admin' && (msg.canRetryWithSalary || (msg.serviceStatus === 'REFUSED' && msg.profileType === 'Travailleur')) && (
+                        <div className="mt-3 pt-3 border-t border-[#00000010] dark:border-[#ffffff10] flex flex-col gap-2">
+                          <button 
+                            id={`retry_worker_btn_${messageId}`}
+                            onClick={() => {
+                              const targetProfile = msg.providerData || {
+                                id: msg.prestatairePhone,
+                                phone: msg.prestatairePhone,
+                                name: msg.prestataireName || 'Travailleur',
+                                titleOrActivity: 'Travailleur Qualifié',
+                                profileType: 'Travailleur'
+                              };
+                              window.dispatchEvent(new CustomEvent('go-to-demande-recherche', {
+                                detail: {
+                                  targetProfile: targetProfile,
+                                  openForm: true
+                                }
+                              }));
+                            }}
+                            className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 active:scale-[0.98] text-white font-black py-3 px-4 rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                          >
+                            <RotateCcw className="w-4 h-4 text-white shrink-0" />
+                            <span className="uppercase tracking-wider text-[11px] text-center font-black">
+                              Revoir le salaire et refaire une demande
+                            </span>
+                          </button>
                         </div>
                       )}
 

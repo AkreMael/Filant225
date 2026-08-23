@@ -119,6 +119,37 @@ export const ProviderProfileDetailModal: React.FC<ProviderProfileDetailModalProp
   const isOwnCard = currentUserPhone && provider.phone && cleanPhone(currentUserPhone) === cleanPhone(provider.phone);
   const isOnline = provider.status === 'Code QR Actif' || provider.isOnline === true || provider.enLigne === true;
 
+  const now = Date.now();
+  const isDeactivated = provider.isActive === false || provider.visibilityStatus === 'desactive';
+  const isExpired = !isDeactivated && (
+    (provider.onlineEnd && typeof provider.onlineEnd === 'number' && provider.onlineEnd < now) ||
+    (provider.expiryDate && new Date(provider.expiryDate).getTime() < now) ||
+    provider.status === 'Expiré' ||
+    provider.visibilityStatus === 'expire'
+  );
+
+  const handleActivateQR = () => {
+    window.dispatchEvent(new CustomEvent('trigger-payment-view', {
+      detail: {
+        title: "Activation Code QR",
+        amount: "7100",
+        waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=7100",
+        paymentType: "Activation"
+      }
+    }));
+  };
+
+  const handleRenewOnline = () => {
+    window.dispatchEvent(new CustomEvent('trigger-payment-view', {
+      detail: {
+        title: "Renouvellement mise en ligne",
+        amount: "210",
+        waveLink: "https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=210",
+        paymentType: "Renouvellement de profil"
+      }
+    }));
+  };
+
   // Navigation handlers
   const handlePrevImage = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -275,6 +306,41 @@ export const ProviderProfileDetailModal: React.FC<ProviderProfileDetailModalProp
           {/* 2. BODY CARD (Overlapping rounded white container) */}
           <div className="bg-white rounded-t-[32px] -mt-5 relative z-30 px-5 pt-5 pb-6 space-y-4">
             
+            {/* DEACTIVATED OR EXPIRED BANNER AT THE TOP OF PROFILE */}
+            {isDeactivated ? (
+              <div className="bg-red-50/90 border-2 border-red-200 rounded-3xl p-5 text-center space-y-4 shadow-sm">
+                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                  <Clock className="w-6 h-6 text-red-600 stroke-[2.5]" />
+                </div>
+                <p className="text-xs sm:text-sm font-black text-red-900 leading-relaxed">
+                  Votre quota de mises en relation gratuites avec les clients est atteint. Veuillez activer votre code QR afin que les clients puissent continuer à voir votre profil et vous contacter pour vos services.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleActivateQR}
+                  className="w-full py-4 px-4 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-red-500"
+                >
+                  <span>Cliquez ici pour activer votre code QR</span>
+                </button>
+              </div>
+            ) : isExpired ? (
+              <div className="bg-amber-50/90 border-2 border-amber-200 rounded-3xl p-5 text-center space-y-4 shadow-sm">
+                <div className="w-12 h-12 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                  <Clock className="w-6 h-6 text-amber-600 stroke-[2.5]" />
+                </div>
+                <p className="text-xs sm:text-sm font-black text-amber-900 leading-relaxed">
+                  La date d’expiration de votre mise en ligne est arrivée. Veuillez effectuer à nouveau le paiement de 210 FCFA pour renouveler votre mise en ligne pendant un mois.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleRenewOnline}
+                  className="w-full py-4 px-4 bg-orange-600 hover:bg-orange-700 active:scale-95 text-white font-black text-xs sm:text-sm uppercase tracking-wider rounded-2xl shadow-lg shadow-orange-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer border border-orange-500"
+                >
+                  <span>Renouveler maintenant</span>
+                </button>
+              </div>
+            ) : null}
+
             {/* Pill Type Badge */}
             <div>
               <span className="inline-block px-3 py-1 rounded-full bg-[#fff7ed] text-[#ea580c] text-[11px] font-black uppercase tracking-wider border border-orange-200/70">
@@ -292,7 +358,7 @@ export const ProviderProfileDetailModal: React.FC<ProviderProfileDetailModalProp
               </p>
             </div>
 
-            {/* LOCALISATION DU PRESTATAIRE BOX (Purple pin card matching screenshot) */}
+            {/* LOCALISATION DU PRESTATAIRE BOX */}
             <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
               <div className="w-10 h-10 rounded-xl bg-[#f3e8ff] text-[#9333ea] flex items-center justify-center shrink-0 shadow-inner">
                 <MapPin className="w-5 h-5 stroke-[2.5]" />
@@ -307,106 +373,127 @@ export const ProviderProfileDetailModal: React.FC<ProviderProfileDetailModalProp
               </div>
             </div>
 
-            {/* DESCRIPTION DES SERVICES BOX */}
-            <div>
-              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">
-                DESCRIPTION DES SERVICES
-              </h2>
-              <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-4 text-sm font-medium text-slate-700 leading-relaxed shadow-sm">
-                <p className="whitespace-pre-line">{description}</p>
-              </div>
-            </div>
-
-            {/* INFORMATIONS COMPLÉMENTAIRES / SALAIRE / DISPONIBILITÉ (Vertical Stack Matching Screenshot) */}
-            <div className="flex flex-col gap-3 pt-1">
-              
-              {/* Montant / Rémunération */}
-              <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-                  <Coins className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    MONTANT PROPOSÉ
-                  </span>
-                  <span className="block text-xs font-black text-orange-600 uppercase truncate">
-                    {amount}
-                  </span>
-                </div>
-              </div>
-
-              {/* Disponibilité */}
-              <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    DISPONIBILITÉ
-                  </span>
-                  <span className="block text-xs font-black text-emerald-700 uppercase truncate">
-                    {availability}
-                  </span>
-                </div>
-              </div>
-
-              {/* Zone de déplacement */}
-              <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                  <Truck className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    ZONE DE DÉPLACEMENT
-                  </span>
-                  <span className="block text-xs font-black text-slate-900 uppercase truncate">
-                    {movementZone.toUpperCase()}
-                  </span>
-                </div>
-              </div>
-
-              {/* Formation / Apprentissage si renseigné */}
-              {experienceOrDiploma && (
-                <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-                    <GraduationCap className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      FORMATION PROFESSIONNELLE
-                    </span>
-                    <span className="block text-xs font-black text-slate-900 uppercase truncate">
-                      {experienceOrDiploma.toUpperCase()}
-                    </span>
+            {/* If NOT deactivated, show full details and descriptions */}
+            {!isDeactivated && (
+              <>
+                {/* DESCRIPTION DES SERVICES BOX */}
+                <div>
+                  <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">
+                    DESCRIPTION DES SERVICES
+                  </h2>
+                  <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-4 text-sm font-medium text-slate-700 leading-relaxed shadow-sm">
+                    <p className="whitespace-pre-line">{description}</p>
                   </div>
                 </div>
-              )}
 
-              {/* Type de contrat si renseigné */}
-              {contractType && (
-                <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                    <Briefcase className="w-5 h-5" />
+                {/* INFORMATIONS COMPLÉMENTAIRES / SALAIRE / DISPONIBILITÉ */}
+                <div className="flex flex-col gap-3 pt-1">
+                  
+                  {/* Montant / Rémunération */}
+                  <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                      <Coins className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        MONTANT PROPOSÉ
+                      </span>
+                      <span className="block text-xs font-black text-orange-600 uppercase truncate">
+                        {amount}
+                      </span>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      TYPE DE CONTRAT
-                    </span>
-                    <span className="block text-xs font-black text-slate-900 uppercase truncate">
-                      {contractType.toUpperCase()}
-                    </span>
+
+                  {/* Disponibilité */}
+                  <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        DISPONIBILITÉ
+                      </span>
+                      <span className="block text-xs font-black text-emerald-700 uppercase truncate">
+                        {availability}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Zone de déplacement */}
+                  <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                      <Truck className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        ZONE DE DÉPLACEMENT
+                      </span>
+                      <span className="block text-xs font-black text-slate-900 uppercase truncate">
+                        {movementZone.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Formation / Apprentissage si renseigné */}
+                  {experienceOrDiploma && (
+                    <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+                        <GraduationCap className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          FORMATION PROFESSIONNELLE
+                        </span>
+                        <span className="block text-xs font-black text-slate-900 uppercase truncate">
+                          {experienceOrDiploma.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Type de contrat si renseigné */}
+                  {contractType && (
+                    <div className="bg-[#f8fafc] border border-slate-200/80 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                        <Briefcase className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          TYPE DE CONTRAT
+                        </span>
+                        <span className="block text-xs font-black text-slate-900 uppercase truncate">
+                          {contractType.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
-              )}
-
-            </div>
+              </>
+            )}
 
           </div>
         </div>
 
-        {/* 3. FIXED BOTTOM BAR (Matching orange Demande de Service button in screenshot) */}
+        {/* 3. FIXED BOTTOM BAR */}
         <div className="absolute bottom-0 inset-x-0 bg-white/95 backdrop-blur-md p-4 border-t border-slate-100 shadow-2xl z-40">
-          {isOwnCard ? (
+          {isDeactivated ? (
+            <button
+              type="button"
+              onClick={handleActivateQR}
+              className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white rounded-2xl font-black text-sm tracking-wider uppercase shadow-lg shadow-red-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-red-400/30"
+            >
+              <span>Cliquez ici pour activer votre code QR</span>
+            </button>
+          ) : isExpired ? (
+            <button
+              type="button"
+              onClick={handleRenewOnline}
+              className="w-full py-4 px-6 bg-orange-600 hover:bg-orange-700 active:scale-[0.98] text-white rounded-2xl font-black text-sm tracking-wider uppercase shadow-lg shadow-orange-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-orange-400/30"
+            >
+              <span>Renouveler maintenant</span>
+            </button>
+          ) : isOwnCard ? (
             isOnline ? (
               <button
                 type="button"

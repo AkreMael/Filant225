@@ -64,6 +64,22 @@ function handleFirestoreError(error: any, operationType: OperationType, path: st
   throw new Error(JSON.stringify(errInfo));
 }
 
+export function cleanUndefinedForFirestore(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanUndefinedForFirestore(item));
+  }
+  const clean: Record<string, any> = {};
+  for (const key of Object.keys(obj)) {
+    const val = obj[key];
+    if (val !== undefined) {
+      clean[key] = cleanUndefinedForFirestore(val);
+    }
+  }
+  return clean;
+}
+
 // Scoped keys for client storage
 const USERS_KEY = 'filant_users';
 const CONNECTION_LOGS_KEY = 'filant_connection_logs';
@@ -1436,6 +1452,90 @@ export const databaseService = {
     }
   },
 
+  setProfileActiveStatus: async (phone: string, isActive: boolean, statusOverride?: string) => {
+    try {
+      await databaseService.ensureAuth();
+      const sanitizedPhone = phone.replace(/\D/g, '');
+      const docRef = doc(db, 'Inscriptions', sanitizedPhone);
+      const existingSnap = await getDoc(docRef);
+      const prev = existingSnap.exists() ? existingSnap.data() : {};
+      
+      const visibilityStatus = isActive ? (statusOverride || 'active') : 'desactive';
+      const statusText = isActive ? 'Code QR Actif' : 'Désactivé';
+      
+      const now = new Date();
+      const onlineStart = Date.now();
+      const onlineEnd = onlineStart + 30 * 24 * 3600 * 1000;
+      const expiryDate = new Date(onlineEnd).toISOString();
+
+      const updateData: any = {
+        isActive: isActive,
+        visibilityStatus: visibilityStatus,
+        status: statusText,
+        updatedAt: serverTimestamp()
+      };
+      
+      if (isActive) {
+        updateData.isOnline = true;
+        updateData.onlinePending = false;
+        updateData.onlineApproved = true;
+        updateData.onlineRefused = false;
+        if (!prev?.onlineEnd || prev.onlineEnd < Date.now()) {
+          updateData.onlineStart = onlineStart;
+          updateData.onlineEnd = onlineEnd;
+          updateData.expiryDate = expiryDate;
+          updateData.activationDate = now.toISOString();
+        }
+      } else {
+        updateData.isOnline = false;
+      }
+
+      await setDoc(docRef, updateData, { merge: true });
+
+      const profileType = prev?.profileType || 'Travailleur';
+      let targetCollection = '';
+      if (profileType === 'Travailleur') targetCollection = 'Travailleurs';
+      else if (profileType === 'Propriétaire' || profileType === 'Equipement') targetCollection = 'Équipements';
+      else if (profileType === 'Agence' || profileType === 'Agence immobilière') targetCollection = 'Agences immobilières';
+      else if (profileType === 'Entreprise') targetCollection = 'Entreprises';
+
+      if (targetCollection) {
+        try {
+          const profRef = doc(db, targetCollection, sanitizedPhone);
+          await setDoc(profRef, updateData, { merge: true });
+        } catch (err) {
+          console.warn("Error updating target collection:", err);
+        }
+      }
+
+      try {
+        const qrRef = doc(db, 'QRCodeActivations', sanitizedPhone);
+        const qrUpdate: any = {
+          isActive: isActive,
+          visibilityStatus: visibilityStatus,
+          status: statusText,
+          updatedAt: serverTimestamp()
+        };
+        if (isActive) {
+          qrUpdate.isVerified = true;
+          if (!prev?.onlineEnd || prev.onlineEnd < Date.now()) {
+            qrUpdate.activationDate = now.toISOString();
+            qrUpdate.expiryDate = expiryDate;
+          }
+        }
+        await setDoc(qrRef, qrUpdate, { merge: true });
+      } catch (err) {
+        console.warn("Error updating QRCodeActivations:", err);
+      }
+
+      databaseService.triggerEvolutionUpdate(sanitizedPhone);
+      return true;
+    } catch (e) {
+      console.error("Error setting profile active status:", e);
+      return false;
+    }
+  },
+
   renewOnlineProfile: async (phone: string) => {
     try {
       await databaseService.ensureAuth();
@@ -1448,14 +1548,21 @@ export const databaseService = {
       const onlineStart = Date.now();
       const durationMs = 30 * 24 * 3600 * 1000; // 1 month
       const onlineEnd = onlineStart + durationMs;
+      const now = new Date();
+      const expiryDate = new Date(onlineEnd).toISOString();
 
       const updatedFields = {
+        isActive: true,
         isOnline: true,
         onlinePending: false,
         onlineApproved: true,
         onlineRefused: false,
         onlineStart,
         onlineEnd,
+        activationDate: now.toISOString(),
+        expiryDate,
+        visibilityStatus: 'renouvele',
+        status: 'Code QR Actif',
         updatedAt: serverTimestamp()
       };
 
@@ -1475,6 +1582,21 @@ export const databaseService = {
         } catch (dbErr) {
           console.warn("Error updating target collection during renewal:", dbErr);
         }
+      }
+
+      try {
+        const qrRef = doc(db, 'QRCodeActivations', sanitizedPhone);
+        await setDoc(qrRef, {
+          isActive: true,
+          isVerified: true,
+          status: "Code QR Actif",
+          visibilityStatus: 'renouvele',
+          activationDate: now.toISOString(),
+          expiryDate,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      } catch (qrErr) {
+        console.warn("Error updating QRCodeActivations on renewal:", qrErr);
       }
 
       databaseService.triggerEvolutionUpdate(sanitizedPhone);
@@ -2752,9 +2874,12 @@ export const databaseService = {
             const now = new Date();
             const expiryDate = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
             
+            await databaseService.setProfileActiveStatus(userId, true, 'active');
             await databaseService.updateQRCodeActivation(userId, {
               status: "Code QR Actif",
               isVerified: true,
+              isActive: true,
+              visibilityStatus: "active",
               expiryDate: expiryDate.toISOString(),
               activationDate: now.toISOString(),
               updatedAt: serverTimestamp()
@@ -2942,8 +3067,9 @@ export const databaseService = {
   saveServiceRequest: async (requestData: any) => {
     try {
       await databaseService.ensureAuth();
+      const sanitized = cleanUndefinedForFirestore(requestData);
       const docRef = await addDoc(collection(db, 'ServiceRequests'), {
-        ...requestData,
+        ...sanitized,
         timestamp: serverTimestamp(),
         adminReadStatus: 'NON LU'
       });
@@ -2951,7 +3077,7 @@ export const databaseService = {
       // Send automated message after service request submission with 1.25s delay
       const phoneRaw = requestData.phone || '';
       const sanitizedPhone = phoneRaw.replace(/\D/g, '');
-      const userId = requestData.userId || sanitizedPhone;
+      const userId = (requestData.userId || sanitizedPhone || '').replace(/\D/g, '') || requestData.userId || sanitizedPhone;
 
       // Alert Admin with FCM push and deep link to Admin Service Requests tab
       try {
@@ -3015,7 +3141,7 @@ export const databaseService = {
       const data = snap.data();
       
       const prestatairePhone = (data.prestatairePhone || '').replace(/\D/g, '');
-      const clientPhone = (data.phone || '').replace(/\D/g, '');
+      const clientPhone = (data.phone || data.userId || '').replace(/\D/g, '');
       const clientName = data.userName || 'Client';
       const clientCity = data.city || 'Non spécifiée';
       const serviceTitle = data.serviceTitle || 'Demande de service';
@@ -3023,14 +3149,14 @@ export const databaseService = {
       const prestataireName = data.prestataireName || 'Prestataire';
 
       // Update ServiceRequests fields for maximum query compatibility
-      const updatedFields = {
+      const updatedFields = cleanUndefinedForFirestore({
         status: 'VALIDATED',
         providerId: prestatairePhone,
         clientId: clientPhone,
         requestId: requestId,
         createdAt: new Date().toISOString(),
         paymentRtdbPath: paymentRtdbPath || data.paymentRtdbPath || null
-      };
+      });
       await setDoc(reqRef, updatedFields, { merge: true });
 
       // Notify provider in MessageriePrivee
@@ -3175,7 +3301,7 @@ export const databaseService = {
       
       const clientUserId = (clientPhone || '').replace(/\D/g, '');
       const msg = {
-        text: `✅ Bonne nouvelle ! Le prestataire a validé votre demande de service.\n\nVous pouvez maintenant le joindre directement au :\n📞 ${displayPhone}`,
+        text: `✅ Bonne nouvelle ! Le prestataire a validé votre demande de service.\n\nVous pouvez maintenant le joindre directement :`,
         sender: 'admin',
         timestamp: new Date().toISOString(),
         isRead: false,
@@ -3198,35 +3324,64 @@ export const databaseService = {
     try {
       await databaseService.ensureAuth();
       const reqRef = doc(db, 'ServiceRequests', requestId);
-      await setDoc(reqRef, { 
+      const snap = await getDoc(reqRef);
+      const data = snap.exists() ? snap.data() : {};
+
+      const profileType = data.profileType || data.answers?.['Type de profil'] || 'Travailleur';
+      const isWorker = profileType === 'Travailleur';
+      const rawPrestatairePhone = (prestatairePhone || data.prestatairePhone || '').replace(/\D/g, '');
+      const prestataireName = data.prestataireName || data.name || data.answers?.['Nom du prestataire'] || 'le prestataire';
+      const providerData = data.providerData || {
+        id: rawPrestatairePhone,
+        phone: rawPrestatairePhone,
+        name: prestataireName,
+        profileType: profileType,
+        city: data.prestataireCity || 'Non spécifiée',
+        titleOrActivity: data.prestataireActivity || data.serviceTitle || 'Travailleur Qualifié'
+      };
+      const reqAmount = amount || data.totalPrice || 0;
+
+      await setDoc(reqRef, cleanUndefinedForFirestore({ 
         status: 'REFUSED', 
         refusedAt: serverTimestamp(),
         isRead: true 
-      }, { merge: true });
+      }), { merge: true });
 
-      const clientUserId = (clientPhone || '').replace(/\D/g, '');
+      const clientUserId = (clientPhone || data.phone || data.userId || '').replace(/\D/g, '');
 
       // 1. Send automatic notification to client private messages
-      const notificationMsg = {
-        text: `❌ Demande non validée\n\nVotre demande de service n'a pas pu être validée par le prestataire (indisponible pour le moment).\n\n💰 Le montant de ${amount} FCFA a été automatiquement recrédité sur votre Portefeuille FILANT°225.`,
+      let messageText = `❌ Votre demande de service n’a pas été validée par le prestataire.\n\n💰 Le montant des frais de mise en relation (${reqAmount} FCFA) a été automatiquement crédité dans votre portefeuille FILANT°225.`;
+      if (isWorker) {
+        messageText += `\n\n💡 Veuillez revoir le montant du salaire proposé.`;
+      }
+
+      const notificationMsg = cleanUndefinedForFirestore({
+        text: messageText,
         sender: 'admin',
-        timestamp: new Date().toISOString(),
+        timestamp: Date.now(),
         isRead: false,
         adminReadStatus: 'LU',
-        serviceStatus: 'REFUSED'
-      };
+        serviceStatus: 'REFUSED',
+        profileType: profileType,
+        providerData: providerData,
+        prestatairePhone: rawPrestatairePhone,
+        prestataireName: prestataireName,
+        requestId: requestId,
+        canRetryWithSalary: isWorker
+      });
+
       if (clientUserId) {
         await databaseService.saveTypedChatMessage('Privee', clientUserId, notificationMsg);
       }
 
       // 2. Perform wallet refund
-      if (amount > 0 && clientUserId) {
+      if (reqAmount > 0 && clientUserId) {
         await databaseService.processWalletRefund(
           clientUserId,
-          clientName || 'Utilisateur',
-          clientCity || 'Non spécifiée',
-          amount,
-          "Demande de service refusée par le prestataire - Remboursement automatique"
+          clientName || data.userName || 'Utilisateur',
+          clientCity || data.city || 'Non spécifiée',
+          reqAmount,
+          "Demande de service non validée par le prestataire - Remboursement des frais de mise en relation"
         );
       }
 
@@ -3377,7 +3532,7 @@ export const databaseService = {
       // Use a consistent ID across collections
       const msgId = message.id || `${message.sender}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-      const docData = {
+      const rawDocData = {
         ...message,
         id: msgId,
         userId: userId,
@@ -3388,6 +3543,7 @@ export const databaseService = {
         isRead: false,
         adminReadStatus: 'NON LU'
       };
+      const docData = cleanUndefinedForFirestore(rawDocData);
 
       // 1. Save to the user's specific conversation for sync across devices
       await setDoc(doc(db, collectionName, userId, 'messages', msgId), docData);

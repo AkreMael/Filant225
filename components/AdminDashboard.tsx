@@ -1035,9 +1035,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       keysWithStatus.push('adminReadStatus');
     }
 
-    // Add Visibilité column for Inscriptions
-    if (collectionName === 'Inscriptions') {
-      headersWithStatus.push('Visibilité');
+    // Add État du profil column for profile tabs and Inscriptions
+    if (collectionName === 'Inscriptions' || ['workers', 'equipments', 'agencies', 'companies', 'inscriptions'].includes(activeTab)) {
+      headersWithStatus.push('État du profil');
       keysWithStatus.push('actions_toggle_active');
     }
 
@@ -1169,27 +1169,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                     }
 
                     if (key === 'actions_toggle_active') {
-                      const isCurrentActive = item.isActive !== false;
+                      const now = Date.now();
+                      const isDeactivated = item.isActive === false || item.visibilityStatus === 'desactive';
+                      const isExpired = !isDeactivated && (
+                        (item.onlineEnd && typeof item.onlineEnd === 'number' && item.onlineEnd < now) ||
+                        (item.expiryDate && new Date(item.expiryDate).getTime() < now) ||
+                        item.status === 'Expiré' ||
+                        item.visibilityStatus === 'expire'
+                      );
+                      const isRenewed = !isDeactivated && !isExpired && item.visibilityStatus === 'renouvele';
+                      const isActive = !isDeactivated && !isExpired && !isRenewed;
+
+                      let statusLabel = 'Activé';
+                      let statusBadgeClass = 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100';
+                      let dotColor = 'bg-green-500';
+
+                      if (isDeactivated) {
+                        statusLabel = 'Désactivé';
+                        statusBadgeClass = 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100';
+                        dotColor = 'bg-red-500';
+                      } else if (isExpired) {
+                        statusLabel = 'Expiré';
+                        statusBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100';
+                        dotColor = 'bg-amber-500';
+                      } else if (isRenewed) {
+                        statusLabel = 'Renouvelé';
+                        statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100';
+                        dotColor = 'bg-emerald-500';
+                      }
+
                       return (
                         <td key={j} className="px-6 py-4 text-center">
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
                               try {
-                                const docRef = doc(db, 'Inscriptions', item.id);
-                                await updateDoc(docRef, { isActive: !isCurrentActive });
+                                const targetPhone = item.phone || item.id;
+                                if (isActive || isRenewed) {
+                                  // Admin clicks to deactive
+                                  await databaseService.setProfileActiveStatus(targetPhone, false);
+                                } else {
+                                  // Admin clicks to activate
+                                  await databaseService.setProfileActiveStatus(targetPhone, true);
+                                }
                               } catch (err) {
-                                console.error("Error updating visibility:", err);
+                                console.error("Error updating profile status:", err);
                               }
                             }}
-                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all duration-200 hover:scale-[1.03] active:scale-95 flex items-center justify-center gap-1.5 mx-auto border ${
-                              isCurrentActive
-                                ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
-                            }`}
+                            title={
+                              isDeactivated ? "Cliquer pour réactiver le profil" :
+                              isExpired ? "Profil expiré (1 mois) - Cliquer pour réactiver" :
+                              isRenewed ? "Profil renouvelé - Cliquer pour désactiver" :
+                              "Profil actif - Cliquer pour désactiver"
+                            }
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider transition-all duration-200 hover:scale-[1.03] active:scale-95 flex items-center justify-center gap-1.5 mx-auto border shadow-sm ${statusBadgeClass}`}
                           >
-                            <span className={`w-2 h-2 rounded-full ${isCurrentActive ? 'bg-green-500' : 'bg-red-500'}`} />
-                            {isCurrentActive ? 'Activé' : 'Désactivé'}
+                            <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+                            {statusLabel}
                           </button>
                         </td>
                       );

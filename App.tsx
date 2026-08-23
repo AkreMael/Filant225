@@ -802,12 +802,17 @@ const App: React.FC = () => {
     const handleGoToDemande = (e: Event) => {
       const customEvent = e as CustomEvent;
       const targetProfile = customEvent.detail?.targetProfile || null;
+      const openForm = customEvent.detail?.openForm || false;
       
       navigateTo({ activeTab: Tab.Menu, menuView: 'demande_recherche' });
       
       if (targetProfile) {
         setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('auto-pin-profile', { detail: { profile: targetProfile } }));
+          if (openForm) {
+            window.dispatchEvent(new CustomEvent('open-service-form', { detail: { profile: targetProfile } }));
+          } else {
+            window.dispatchEvent(new CustomEvent('auto-pin-profile', { detail: { profile: targetProfile } }));
+          }
         }, 300);
       }
     };

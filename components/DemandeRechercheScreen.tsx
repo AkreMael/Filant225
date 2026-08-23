@@ -732,7 +732,7 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
     }
   }, [selectedAdDetail]);
 
-  // Hook to handle external auto pinnings (e.g. from Site page)
+  // Hook to handle external auto pinnings (e.g. from Site page or Chat page)
   useEffect(() => {
     const handleAutoPinEvent = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -748,9 +748,27 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
         }
       }
     };
+
+    const handleOpenServiceFormEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const profileData = customEvent.detail?.profile || customEvent.detail?.targetProfile;
+      if (profileData) {
+        const exactDBMatch = inscriptionsFromDB.find(x => x.id === profileData.id);
+        const target = exactDBMatch || profileData;
+        setPinnedProfile(target);
+        setSelectedItemForForm(target);
+        setTravailleurStep(0);
+        setEquipStep(0);
+        setFormErrors('');
+      }
+    };
     
     window.addEventListener('auto-pin-profile', handleAutoPinEvent);
-    return () => window.removeEventListener('auto-pin-profile', handleAutoPinEvent);
+    window.addEventListener('open-service-form', handleOpenServiceFormEvent);
+    return () => {
+      window.removeEventListener('auto-pin-profile', handleAutoPinEvent);
+      window.removeEventListener('open-service-form', handleOpenServiceFormEvent);
+    };
   }, [inscriptionsFromDB]);
 
   // Run automatic search or reactive update on db change or query change
@@ -1195,27 +1213,40 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
     const startTime = Date.now();
 
     try {
+      const itemName = item.name || item.userName || item.agencyName || item.ownerName || item.companyName || 'Prestataire';
+      const itemCity = item.city || item.agencyCity || item.equipmentCity || item.companyCity || user.city || 'Non spécifiée';
+      const itemTitle = item.titleOrActivity || item.job || item.equipmentType || item.equipmentCategory || item.companyPoste || item.companyDomain || (item.propertyTypes ? (Array.isArray(item.propertyTypes) ? item.propertyTypes.join(', ') : item.propertyTypes) : '') || 'Service';
+      const itemPhone = (item.phone || item.prestatairePhone || item.phoneNumber || item.id || '').replace(/\D/g, '');
+      const itemProfileType = item.profileType || (item.agencyName ? 'Agence Immobilière' : item.equipmentType ? 'Location d\'Engins et Matériels' : item.companyName ? 'Entreprise' : 'Travailleur');
+
+      const cleanAnswers: Record<string, any> = {};
+      Object.entries(answersData || {}).forEach(([k, v]) => {
+        cleanAnswers[k] = v !== undefined && v !== null ? v : '';
+      });
+
       // 1. Create Service Request Data
       const serviceRequestData = {
-        userId: chatUserId,
+        userId: (chatUserId || user.phone || '').replace(/\D/g, '') || chatUserId || 'anonymous_user',
         userName: user.name || 'Utilisateur',
         phone: user.phone || 'Non spécifié',
         city: user.city || 'Non spécifiée',
-        serviceTitle: `Demande de service : ${item.titleOrActivity}`,
+        serviceTitle: `Demande de service : ${itemTitle}`,
         formType: 'service_request_search',
         answers: {
-          'Nom du prestataire': item.name,
-          'Ville du prestataire': item.city,
-          'Activité recherchée': item.titleOrActivity,
-          'Type de profil': item.profileType,
-          ...answersData
+          'Nom du prestataire': itemName,
+          'Ville du prestataire': itemCity,
+          'Activité recherchée': itemTitle,
+          'Type de profil': itemProfileType,
+          ...cleanAnswers
         },
-        totalPrice: amount,
+        totalPrice: amount || 0,
         readStatus: 'NON LU',
-        prestataireName: item.name,
-        prestataireCity: item.city,
-        prestataireActivity: item.titleOrActivity,
-        prestatairePhone: (item.phone || item.prestatairePhone || item.id || '').replace(/\D/g, ''),
+        prestataireName: itemName,
+        prestataireCity: itemCity,
+        prestataireActivity: itemTitle,
+        prestatairePhone: itemPhone,
+        profileType: itemProfileType,
+        providerData: item,
         status: 'En attente de paiement'
       };
 
@@ -1258,7 +1289,7 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
       // Now open the payment screen automatically
       window.dispatchEvent(new CustomEvent('trigger-payment-view', {
         detail: {
-          title: item.name,
+          title: itemName,
           amount: amount.toString(),
           paymentType: "Mise en relation",
           waveLink: `https://pay.wave.com/m/M_ci_jwxwatdcoKS8/c/ci/?amount=${amount}`,
@@ -1451,25 +1482,31 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
 
             <div className="flex-1 min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="font-sans font-black uppercase text-xs tracking-tight text-slate-900 truncate">{selectedItemForForm.name}</h4>
+                <h4 className="font-sans font-black uppercase text-xs tracking-tight text-slate-900 truncate">
+                  {selectedItemForForm.name || selectedItemForForm.userName || selectedItemForForm.agencyName || 'Prestataire'}
+                </h4>
                 <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
                   selectedItemForForm.profileType === 'Travailleur' ? 'bg-green-50 text-green-700 border border-green-100' :
                   selectedItemForForm.profileType === 'Propriétaire' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
                   selectedItemForForm.profileType === 'Agence' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
                   'bg-orange-50 text-orange-700 border border-orange-100'
                 }`}>
-                  {selectedItemForForm.profileType === 'Propriétaire' ? 'ÉQUIPEMENT À LOUER' : selectedItemForForm.profileType}
+                  {selectedItemForForm.profileType === 'Propriétaire' ? 'ÉQUIPEMENT À LOUER' : (selectedItemForForm.profileType || 'Travailleur')}
                 </span>
               </div>
 
               <div className="flex items-center gap-1 text-slate-500">
                 <MapPin className="h-3 w-3 text-slate-400 stroke-[2.5]" />
-                <span className="text-[10px] font-black uppercase tracking-tight">{selectedItemForForm.city}</span>
+                <span className="text-[10px] font-black uppercase tracking-tight">
+                  {selectedItemForForm.city || 'Non spécifiée'}
+                </span>
               </div>
 
               <div className="mt-1">
                 <span className="text-[9px] text-slate-400 font-black uppercase tracking-wider block">Activité / Titre :</span>
-                <span className="text-xs text-slate-800 font-bold block">{selectedItemForForm.titleOrActivity}</span>
+                <span className="text-xs text-slate-800 font-bold block">
+                  {selectedItemForForm.titleOrActivity || selectedItemForForm.job || selectedItemForForm.equipmentType || selectedItemForForm.companyDomain || (selectedItemForForm.propertyTypes ? (Array.isArray(selectedItemForForm.propertyTypes) ? selectedItemForForm.propertyTypes.join(', ') : selectedItemForForm.propertyTypes) : '') || 'Service'}
+                </span>
               </div>
             </div>
           </div>

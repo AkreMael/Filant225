@@ -160,11 +160,11 @@ const ServicesRequestsScreen: React.FC<ServicesRequestsScreenProps> = ({ onBack,
                     <button 
                       id={`refuse_req_${req.id}`}
                       onClick={() => handleRefuse(req)} 
-                      className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-1.5 border border-rose-200"
-                      title="Refuser la demande"
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl shadow-sm active:scale-95 transition-all flex items-center gap-1.5 border border-rose-200"
+                      title="Ne pas valider la demande"
                     >
                       <X className="w-4 h-4" />
-                      <span className="text-xs font-black uppercase tracking-tight">Refuser</span>
+                      <span className="text-[11px] font-black uppercase tracking-tight">Ne pas valider</span>
                     </button>
                     <button 
                       id={`accept_req_${req.id}`}
