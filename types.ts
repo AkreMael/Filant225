@@ -98,6 +98,21 @@ export interface FavoriteRequest {
   totalPrice?: number;
 }
 
+export interface FavoriteWorker {
+  id: string;
+  workerId?: string;
+  name: string;
+  category?: string;
+  description?: string;
+  profileImageUrl?: string;
+  rating?: number;
+  phone?: string;
+  isVerified?: boolean;
+  formType?: 'worker' | 'location' | 'night_service' | 'rapid_building_service';
+  userPhone?: string;
+  addedAt?: number;
+}
+
 export interface WorkerLiveLocation {
   workerId: string;
   workerName: string;

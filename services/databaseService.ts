@@ -1,4 +1,4 @@
-import type { User, Worker, Offer, FavoriteRequest, PersonalRequest, Notification } from '../types';
+import type { User, Worker, Offer, FavoriteRequest, FavoriteWorker, PersonalRequest, Notification } from '../types';
 import { db, auth, rtdb, storage } from '../firebase';
 import { doc, setDoc, serverTimestamp, collection, addDoc, getDocs, query, orderBy, deleteDoc, getDoc, onSnapshot, writeBatch, updateDoc, where, limit, increment } from 'firebase/firestore';
 import { ref as rtdbRef, push, set, serverTimestamp as rtdbTimestamp, get, update, onValue, remove, child } from 'firebase/database';
@@ -84,6 +84,7 @@ export function cleanUndefinedForFirestore(obj: any): any {
 const USERS_KEY = 'filant_users';
 const CONNECTION_LOGS_KEY = 'filant_connection_logs';
 const FAVORITES_KEY_PREFIX = 'filant_user_favorites_';
+const FAVORITE_WORKERS_KEY_PREFIX = 'filant_user_fav_workers_';
 const CONTACTS_KEY_PREFIX = 'filant_user_contacts_';
 const CHAT_KEY_PREFIX = 'filant_chat_history_';
 const NOTIFICATIONS_KEY_PREFIX = 'filant_user_notifications_';
@@ -1892,6 +1893,184 @@ export const databaseService = {
   clearFavorites: (phone: string) => {
       const key = getScopedKey(phone, FAVORITES_KEY_PREFIX);
       localStorage.setItem(key, JSON.stringify([]));
+  },
+
+  getFavoriteWorkers: (phone: string): FavoriteWorker[] => {
+    try {
+      if (!phone) return [];
+      const sanitizedPhone = phone.replace(/\D/g, '');
+      const key = getScopedKey(sanitizedPhone, FAVORITE_WORKERS_KEY_PREFIX);
+      const favs = localStorage.getItem(key);
+      return favs ? JSON.parse(favs) : [];
+    } catch (e) {
+      return [];
+    }
+  },
+
+  isFavoriteWorker: (phone: string, workerIdOrName: string): boolean => {
+    if (!phone || !workerIdOrName) return false;
+    const favs = databaseService.getFavoriteWorkers(phone);
+    const target = workerIdOrName.toLowerCase().trim();
+    return favs.some(f => 
+      (f.id && f.id.toLowerCase().trim() === target) || 
+      (f.name && f.name.toLowerCase().trim() === target) || 
+      (f.workerId && f.workerId.toLowerCase().trim() === target)
+    );
+  },
+
+  toggleFavoriteWorker: async (phone: string, worker: Worker | { id?: string; name: string; description?: string; profileImageUrl?: string; category?: string; rating?: number; phone?: string; isVerified?: boolean; formType?: any }): Promise<boolean> => {
+    try {
+      const sanitizedPhone = (phone || '').replace(/\D/g, '');
+      if (!sanitizedPhone) return false;
+
+      const key = getScopedKey(sanitizedPhone, FAVORITE_WORKERS_KEY_PREFIX);
+      const existing = databaseService.getFavoriteWorkers(sanitizedPhone);
+      const targetName = (worker.name || '').toLowerCase().trim();
+      const targetId = (worker.id || '').toLowerCase().trim();
+
+      const existingIndex = existing.findIndex(f => 
+        (targetId && f.id && f.id.toLowerCase().trim() === targetId) ||
+        (targetId && f.workerId && f.workerId.toLowerCase().trim() === targetId) ||
+        (targetName && f.name && f.name.toLowerCase().trim() === targetName)
+      );
+
+      const isAlreadyFav = existingIndex !== -1;
+      let isNowFav = false;
+
+      if (isAlreadyFav) {
+        // Remove from favorites
+        const removedItem = existing[existingIndex];
+        const updated = existing.filter((_, idx) => idx !== existingIndex);
+        localStorage.setItem(key, JSON.stringify(updated));
+        isNowFav = false;
+
+        // Sync with Firestore
+        try {
+          const docId = `${sanitizedPhone}_${(removedItem.name || removedItem.id || 'worker').replace(/[^a-zA-Z0-9]/g, '_')}`;
+          await deleteDoc(doc(db, 'FavorisTravailleurs', docId));
+        } catch (err) {
+          console.warn("Error deleting favorite worker from Firestore:", err);
+        }
+      } else {
+        // Add to favorites
+        const newFav: FavoriteWorker = {
+          id: worker.id || `fav-${Date.now()}`,
+          workerId: worker.id,
+          name: worker.name,
+          description: worker.description || '',
+          profileImageUrl: worker.profileImageUrl || '',
+          category: worker.category || 'Disponible',
+          rating: worker.rating || 4.8,
+          phone: worker.phone || '+2250705052632',
+          isVerified: worker.isVerified ?? true,
+          formType: (worker as any).formType || 'worker',
+          userPhone: sanitizedPhone,
+          addedAt: Date.now()
+        };
+
+        const updated = [newFav, ...existing.filter(f => f.name !== worker.name)];
+        localStorage.setItem(key, JSON.stringify(updated));
+        isNowFav = true;
+
+        // Sync with Firestore
+        try {
+          const docId = `${sanitizedPhone}_${(worker.name || worker.id || 'worker').replace(/[^a-zA-Z0-9]/g, '_')}`;
+          await setDoc(doc(db, 'FavorisTravailleurs', docId), cleanUndefinedForFirestore({
+            ...newFav,
+            firestoreDocId: docId,
+            updatedAt: Date.now()
+          }), { merge: true });
+        } catch (err) {
+          console.warn("Error saving favorite worker to Firestore:", err);
+        }
+      }
+
+      // Dispatch event for real-time reactivity
+      window.dispatchEvent(new CustomEvent('filant-fav-workers-updated', {
+        detail: { phone: sanitizedPhone, isFavorite: isNowFav, workerName: worker.name }
+      }));
+
+      return isNowFav;
+    } catch (e) {
+      console.error("Error in toggleFavoriteWorker:", e);
+      return false;
+    }
+  },
+
+  removeFavoriteWorker: async (phone: string, workerIdOrName: string) => {
+    try {
+      const sanitizedPhone = (phone || '').replace(/\D/g, '');
+      if (!sanitizedPhone) return;
+
+      const key = getScopedKey(sanitizedPhone, FAVORITE_WORKERS_KEY_PREFIX);
+      const existing = databaseService.getFavoriteWorkers(sanitizedPhone);
+      const target = workerIdOrName.toLowerCase().trim();
+
+      const updated = existing.filter(f => 
+        !(f.id && f.id.toLowerCase().trim() === target) &&
+        !(f.workerId && f.workerId.toLowerCase().trim() === target) &&
+        !(f.name && f.name.toLowerCase().trim() === target)
+      );
+
+      localStorage.setItem(key, JSON.stringify(updated));
+
+      try {
+        const docId = `${sanitizedPhone}_${workerIdOrName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        await deleteDoc(doc(db, 'FavorisTravailleurs', docId));
+      } catch (err) {
+        console.warn("Error deleting favorite from Firestore:", err);
+      }
+
+      window.dispatchEvent(new CustomEvent('filant-fav-workers-updated', {
+        detail: { phone: sanitizedPhone, isFavorite: false, workerName: workerIdOrName }
+      }));
+    } catch (e) {
+      console.error("Error in removeFavoriteWorker:", e);
+    }
+  },
+
+  subscribeToFavoriteWorkers: (phone: string, callback: (workers: FavoriteWorker[]) => void) => {
+    const sanitizedPhone = (phone || '').replace(/\D/g, '');
+    if (!sanitizedPhone) {
+      callback([]);
+      return () => {};
+    }
+
+    // Immediate local cache
+    const local = databaseService.getFavoriteWorkers(sanitizedPhone);
+    callback(local);
+
+    // Firestore subscription
+    const q = query(
+      collection(db, 'FavorisTravailleurs'),
+      where('userPhone', '==', sanitizedPhone)
+    );
+
+    const unsubFirestore = onSnapshot(q, (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs.map(d => ({ ...d.data() } as FavoriteWorker));
+        list.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+        const key = getScopedKey(sanitizedPhone, FAVORITE_WORKERS_KEY_PREFIX);
+        localStorage.setItem(key, JSON.stringify(list));
+        callback(list);
+      } else if (local.length === 0) {
+        callback([]);
+      }
+    }, (err) => {
+      console.warn("Error in subscribeToFavoriteWorkers:", err);
+    });
+
+    const handleLocalUpdate = () => {
+      const updated = databaseService.getFavoriteWorkers(sanitizedPhone);
+      callback(updated);
+    };
+
+    window.addEventListener('filant-fav-workers-updated', handleLocalUpdate);
+
+    return () => {
+      unsubFirestore();
+      window.removeEventListener('filant-fav-workers-updated', handleLocalUpdate);
+    };
   },
 
   getContacts: (phone: string): SavedContact[] => {
