@@ -7,7 +7,7 @@ import { Linkify } from '../utils/textUtils';
 import SpeakerIcon from './common/SpeakerIcon';
 import VoiceMessagePlayer from './VoiceMessagePlayer';
 import VoiceRecorder from './VoiceRecorder';
-import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Pen, Phone, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Send, Trash2, CreditCard, Check, CheckCheck, X, Phone, Loader2, RotateCcw } from 'lucide-react';
 
 interface ChatMessage {
   id?: string;
@@ -74,24 +74,6 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
 
   const [viewportHeight, setViewportHeight] = useState<number | string>('100dvh');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const [isWritingMessage, setIsWritingMessage] = useState(false);
-  const [popupInputText, setPopupInputText] = useState('');
-  const popupTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const handleSendFromPopup = async () => {
-    const text = popupInputText.trim();
-    if (!text) return;
-    setIsWritingMessage(false);
-    setPopupInputText('');
-    
-    // Fermer le clavier automatiquement
-    if (document.activeElement) {
-      (document.activeElement as HTMLElement).blur();
-    }
-    
-    await handleSendMessage(text);
-  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -423,11 +405,11 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
   return (
     <div 
       id="chat_screen_root"
-      className="flex flex-col bg-[#efeae2] dark:bg-[#111b21] animate-in fade-in duration-300 w-full overflow-hidden h-full"
-      style={{ height: isLockScreenChat ? '100%' : (isModal ? '100%' : (typeof viewportHeight === 'number' ? `${viewportHeight}px` : '100dvh')) }}
+      className="flex flex-col bg-[#efeae2] dark:bg-[#111b21] animate-in fade-in duration-300 w-full overflow-hidden h-full max-h-full"
+      style={{ height: isLockScreenChat || isModal ? '100%' : (typeof viewportHeight === 'number' ? `${viewportHeight}px` : '100dvh') }}
     >
       {/* WhatsApp Header: Elegant Green for Light Mode, Dark Slate for Dark Mode */}
-      <header id="chat_header" className="bg-[#008069] dark:bg-[#1f2c34] text-white py-3 px-4 flex items-center justify-between sticky top-0 z-20 shadow-md">
+      <header id="chat_header" className="bg-[#008069] dark:bg-[#1f2c34] text-white py-3 px-4 flex items-center justify-between shrink-0 z-20 shadow-md">
         <div className="flex items-center gap-2">
           <button id="btn_back_chat" onClick={onBack} className="p-1.5 -ml-1 rounded-full hover:bg-black/10 active:scale-95 transition-all text-white">
             {isModal ? <X size={24} /> : <ChevronLeft size={24} />}
@@ -460,7 +442,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
 
       {/* Admin Quick Templates Bar */}
       {isAdmin && (
-        <div id="quick_templates_container" className="bg-white dark:bg-[#111b21] border-b border-slate-200/20 dark:border-slate-800 p-2 flex gap-1.5 overflow-x-auto scrollbar-hide z-10 shadow-sm">
+        <div id="quick_templates_container" className="bg-white dark:bg-[#111b21] border-b border-slate-200/20 dark:border-slate-800 p-2 flex gap-1.5 overflow-x-auto scrollbar-hide shrink-0 z-10 shadow-sm">
           {QUICK_MESSAGES.map((msg) => (
             <button
               id={`quick_msg_${msg.label}`}
@@ -479,7 +461,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         id="messages_viewport"
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-hide overscroll-contain bg-[#efeae2] dark:bg-[#111b21] bg-opacity-95"
+        className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-hide overscroll-contain bg-[#efeae2] dark:bg-[#111b21] bg-opacity-95 min-h-0"
         style={{
           backgroundImage: `radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px)`,
           backgroundSize: '20px 20px'
@@ -736,136 +718,60 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Floating pen write icon for the stable lock screen chat */}
-      {isLockScreenChat && (
-        <button
-          id="btn_open_write_popup"
-          onClick={() => setIsWritingMessage(true)}
-          className="absolute bottom-6 right-6 w-14 h-14 rounded-full bg-[#00a884] text-white flex items-center justify-center shadow-2xl hover:brightness-95 hover:scale-105 active:scale-95 transition-all z-[1000] cursor-pointer"
-          title="Écrire un message"
-        >
-          <Pen size={22} className="text-white" />
-        </button>
-      )}
-
-      {/* WhatsApp Style Curved Footer Input Bar */}
-      {isAdmin && (
-        <div id="chat_footer" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
-          {!isRecordingVoice && (
-            <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
-              <textarea
-                id="chat_input_textarea"
-                ref={textareaRef}
-                rows={1}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                onFocus={() => {
-                  setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                  }, 150);
-                }}
-                placeholder="Écrivez votre message..."
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
-                style={{ height: 'auto' }}
-              />
-            </div>
-          )}
-          
-          {!isRecordingVoice && inputText.trim() ? (
-            <button
-              id="btn_send_message"
-              onClick={() => handleSendMessage()}
-              className="w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg cursor-pointer"
-              title="Envoyer le message"
-            >
-              <Send size={18} />
-            </button>
-          ) : (
-            <VoiceRecorder 
-              onSendRecording={handleSendVoiceRecording}
-              onRecordingStateChange={setIsRecordingVoice}
-              disabled={isUploadingVoice}
+      {/* Unified WhatsApp-Style Fixed Footer Input Bar */}
+      <div 
+        id="chat_footer" 
+        className="p-2.5 sm:p-3 pb-[calc(0.625rem+env(safe-area-inset-bottom,0px))] bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-center gap-2 shrink-0 border-t border-slate-200/40 dark:border-slate-800 z-30 shadow-[0_-2px_10px_rgba(0,0,0,0.04)]"
+      >
+        {!isRecordingVoice && (
+          <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-full px-4 py-1.5 border border-slate-200/60 dark:border-slate-700/60 shadow-sm focus-within:ring-2 focus-within:ring-[#00a884] focus-within:border-transparent transition-all">
+            <textarea
+              id="chat_input_textarea"
+              ref={textareaRef}
+              rows={1}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              onFocus={() => {
+                setTimeout(() => {
+                  messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }, 200);
+              }}
+              placeholder="Écrivez votre message..."
+              className="w-full bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none leading-normal"
+              style={{ height: 'auto' }}
             />
-          )}
-        </div>
-      )}
-
-      {/* Special lock screen fake input bar */}
-      {!isAdmin && isEnAttenteDeTraitement && !isLockScreenChat && (
-        <div id="chat_footer_fake_container" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
-          {!isRecordingVoice && (
-            <div 
-              id="chat_footer_fake"
-              onClick={() => setIsWritingMessage(true)}
-              className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100 cursor-pointer"
-            >
-              <span className="text-slate-400 dark:text-slate-300 text-sm py-1 font-semibold">
-                Écrivez votre message...
-              </span>
-            </div>
-          )}
-          
+          </div>
+        )}
+        
+        {!isRecordingVoice && inputText.trim() ? (
+          <button
+            id="btn_send_message"
+            type="button"
+            onPointerDown={(e) => {
+              // Prevent losing focus / closing keyboard prematurely before sending
+              e.preventDefault();
+              handleSendMessage();
+            }}
+            onClick={() => handleSendMessage()}
+            className="w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 bg-[#00a884] text-white hover:bg-[#008f72] cursor-pointer"
+            title="Envoyer le message"
+          >
+            <Send size={18} />
+          </button>
+        ) : (
           <VoiceRecorder 
             onSendRecording={handleSendVoiceRecording}
             onRecordingStateChange={setIsRecordingVoice}
             disabled={isUploadingVoice}
           />
-        </div>
-      )}
-
-      {/* Standard client-side footer if not on lock screen */}
-      {!isAdmin && !isEnAttenteDeTraitement && !isLockScreenChat && (
-        <div id="chat_footer_client" className="p-3 bg-[#f0f2f5] dark:bg-[#1f2c34] flex items-end gap-2.5 shrink-0 shadow-inner">
-          {!isRecordingVoice && (
-            <div className="flex-1 flex items-center min-h-[44px] bg-white dark:bg-[#2a3942] rounded-3xl px-4 py-2 border border-transparent shadow shadow-neutral-100">
-              <textarea
-                id="chat_input_textarea_client"
-                ref={textareaRef}
-                rows={1}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                onFocus={() => {
-                  setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                  }, 150);
-                }}
-                placeholder="Écrivez votre message..."
-                className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-1 font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none max-h-24 overflow-y-auto scrollbar-hide focus:outline-none"
-                style={{ height: 'auto' }}
-              />
-            </div>
-          )}
-          
-          {!isRecordingVoice && inputText.trim() ? (
-            <button
-              id="btn_send_message_client"
-              onClick={() => handleSendMessage()}
-              className="w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md shrink-0 active:scale-90 bg-[#00a884] text-white hover:brightness-95 hover:shadow-lg cursor-pointer"
-              title="Envoyer le message"
-            >
-              <Send size={18} />
-            </button>
-          ) : (
-            <VoiceRecorder 
-              onSendRecording={handleSendVoiceRecording}
-              onRecordingStateChange={setIsRecordingVoice}
-              disabled={isUploadingVoice}
-            />
-          )}
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Confirmation of suppression Modal */}
       {deleteConfirm.show && (
@@ -886,83 +792,17 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
               <button 
                 id="btn_confirm_delete_yes"
                 onClick={handleDeleteMessage}
-                className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase tracking-wider text-[10px] shadow-md active:scale-95 transition-all text-center"
+                className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase tracking-wider text-[10px] shadow-md active:scale-95 transition-all text-center cursor-pointer"
               >
                 Oui, supprimer
               </button>
               <button 
                 id="btn_confirm_delete_no"
                 onClick={() => setDeleteConfirm({show: false, messageId: null, isBulk: false})}
-                className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase tracking-wider text-[10px] active:scale-95 transition-all text-center"
+                className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase tracking-wider text-[10px] active:scale-95 transition-all text-center cursor-pointer"
               >
                 Annuler
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Centered input popup modal exclusively for the lock screen */}
-      {isWritingMessage && (
-        <div 
-          onClick={() => setIsWritingMessage(false)}
-          className="absolute inset-0 z-[12000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-none cursor-pointer"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white dark:bg-[#222e35] rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200/50 dark:border-white/10 flex flex-col gap-4 cursor-default animate-none"
-          >
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-white/5">
-              <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
-                Nouveau message
-              </h3>
-              <button 
-                onClick={() => setIsWritingMessage(false)}
-                className="text-slate-450 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="bg-[#f0f2f5] dark:bg-[#2a3942] rounded-2xl p-3.5 border border-transparent shadow-inner">
-              <textarea
-                ref={popupTextareaRef}
-                autoFocus
-                rows={4}
-                value={popupInputText}
-                onChange={(e) => setPopupInputText(e.target.value)}
-                placeholder="Écrivez votre message..."
-                className="w-full bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 resize-none focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-between items-center gap-3 mt-1">
-              <div className="flex items-center">
-                <VoiceRecorder 
-                  onSendRecording={(blob, dur, transcript) => {
-                    setIsWritingMessage(false);
-                    handleSendVoiceRecording(blob, dur, transcript);
-                  }}
-                  disabled={isUploadingVoice}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsWritingMessage(false)}
-                  className="px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleSendFromPopup}
-                  disabled={!popupInputText.trim()}
-                  className="px-5 py-2.5 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 shadow-md active:scale-95 bg-[#00a884] text-white hover:brightness-95 disabled:bg-slate-300 dark:disabled:bg-slate-750 disabled:text-slate-400 disabled:cursor-not-allowed disabled:shadow-none"
-                >
-                  <Send size={12} />
-                  Envoyer
-                </button>
-              </div>
             </div>
           </div>
         </div>

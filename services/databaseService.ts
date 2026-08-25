@@ -3532,6 +3532,7 @@ export const databaseService = {
       // Use a consistent ID across collections
       const msgId = message.id || `${message.sender}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+      const isAdminSender = message.sender === 'admin';
       const rawDocData = {
         ...message,
         id: msgId,
@@ -3540,21 +3541,19 @@ export const databaseService = {
         phone: user?.phone || userId,
         city: finalCity,
         timestamp: serverTimestamp(),
-        isRead: false,
-        adminReadStatus: 'NON LU'
+        isRead: message.isRead !== undefined ? message.isRead : (isAdminSender ? false : true),
+        adminReadStatus: message.adminReadStatus || (isAdminSender ? 'LU' : 'NON LU')
       };
       const docData = cleanUndefinedForFirestore(rawDocData);
 
       // 1. Save to the user's specific conversation for sync across devices
       await setDoc(doc(db, collectionName, userId, 'messages', msgId), docData);
       
-      // 2. Save to the global history for admin overview ONLY if it's from user or a form
-      if (message.sender === 'user' || message.type === 'assistant_request' || message.type === 'form_submission' || message.type === 'status_submission') {
-        await setDoc(doc(db, collectionName, msgId), {
-          ...docData,
-          chatType: type
-        });
-      }
+      // 2. Save to the global history for admin overview
+      await setDoc(doc(db, collectionName, msgId), {
+        ...docData,
+        chatType: type
+      });
 
       // 3. Reset typing status when a message is sent
       const sender = message.sender || 'user';
@@ -3880,26 +3879,44 @@ export const databaseService = {
         where(side === 'user' ? 'adminReadStatus' : 'isRead', '==', side === 'user' ? 'NON LU' : false)
       );
       const snapshot = await getDocs(q);
-      if (snapshot.empty) return;
 
       const batch = writeBatch(db);
       
-      snapshot.docs.forEach(d => {
-        const updateData: any = {};
-        if (side === 'user') {
-          updateData.adminReadStatus = 'VU';
-        } else {
-          updateData.isRead = true;
+      if (!snapshot.empty) {
+        snapshot.docs.forEach(d => {
+          const updateData: any = {};
+          if (side === 'user') {
+            updateData.adminReadStatus = 'VU';
+          } else {
+            updateData.isRead = true;
+          }
+          
+          // Update subcollection doc
+          batch.update(d.ref, updateData);
+          
+          // For user messages, also update global collection doc if it exists using set merge
+          if (side === 'user') {
+            batch.set(doc(db, collectionName, d.id), updateData, { merge: true });
+          }
+        });
+      }
+
+      // Also ensure any global collection documents for this user are marked as VU for admin
+      if (side === 'user') {
+        try {
+          const qGlobal = query(
+            collection(db, collectionName),
+            where('userId', '==', userId),
+            where('adminReadStatus', '==', 'NON LU')
+          );
+          const snapGlobal = await getDocs(qGlobal);
+          snapGlobal.docs.forEach(d => {
+            batch.set(d.ref, { adminReadStatus: 'VU' }, { merge: true });
+          });
+        } catch (globalErr) {
+          console.warn(`Notice on global ${type} read update:`, globalErr);
         }
-        
-        // Update subcollection doc
-        batch.update(d.ref, updateData);
-        
-        // For user messages, also update global collection doc if it exists using set merge
-        if (side === 'user') {
-          batch.set(doc(db, collectionName, d.id), updateData, { merge: true });
-        }
-      });
+      }
       
       await batch.commit();
     } catch (e) {
