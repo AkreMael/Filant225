@@ -380,28 +380,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
         const { remove, ref } = await import('firebase/database');
         await remove(rtdbRef(rtdb, itemToDelete.rtdbPath));
       } else if (itemToDelete.collectionName === 'MessageriePrivee_Thread') {
-        const { deleteDoc, doc, getDocs, collection, query, where, writeBatch } = await import('firebase/firestore');
-        
-        const collectionName = 'MessageriePrivee';
-        
-        const batch = writeBatch(db);
-
-        // 1. Delete from global overview
-        const q = query(collection(db, collectionName), where('userId', '==', itemToDelete.id));
-        const snap = await getDocs(q);
-        snap.docs.forEach(d => batch.delete(d.ref));
-        
-        // Also check phone if userId search was empty or for redundancy
-        const q2 = query(collection(db, collectionName), where('phone', '==', itemToDelete.id));
-        const snap2 = await getDocs(q2);
-        snap2.docs.forEach(d => batch.delete(d.ref));
-        
-        // 2. Delete the user's subcollection messages (this is what the user actually sees)
-        const userMessagesRef = collection(db, collectionName, itemToDelete.id, 'messages');
-        const userMessagesSnap = await getDocs(userMessagesRef);
-        userMessagesSnap.docs.forEach(d => batch.delete(d.ref));
-        
-        await batch.commit();
+        await databaseService.deleteAllTypedChatMessages('Privee', itemToDelete.id);
       } else {
         const { deleteDoc, doc } = await import('firebase/firestore');
         await deleteDoc(doc(db, itemToDelete.collectionName, itemToDelete.id));

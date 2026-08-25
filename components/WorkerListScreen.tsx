@@ -1,12 +1,14 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { Worker, User as UserType } from '../types';
 import EmbeddedForm from './EmbeddedForm';
-import { User, UserPlus, Headphones, Users } from 'lucide-react';
+import { User, UserPlus, Headphones, Users, X } from 'lucide-react';
 import { getFormImage } from './common/formDefinitions';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
+import { WorkerSearchLoadingAnimation } from './WorkerSearchLoadingAnimation';
 import { 
   AlreadyRegisteredModal, 
   ProviderAvailabilityModal, 
@@ -497,6 +499,22 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Disponible');
+  const [isSearchingTransition, setIsSearchingTransition] = useState(false);
+
+  // Debounced search transition for fluid UX
+  useEffect(() => {
+    if (!searchTerm && selectedCategory === 'Disponible') {
+      setIsSearchingTransition(false);
+      return;
+    }
+
+    setIsSearchingTransition(true);
+    const timer = setTimeout(() => {
+      setIsSearchingTransition(false);
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedCategory]);
 
   // Modal states
   const [isAlreadyRegisteredOpen, setIsAlreadyRegisteredOpen] = useState(false);
@@ -630,13 +648,24 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
                 <div className="relative flex-1">
                     <input 
                         type="text" 
-                        placeholder="" 
+                        placeholder="Rechercher un métier ou service..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-8 pr-8 py-1.5 rounded-full border border-gray-300 focus:outline-none focus:border-orange-500 text-xs text-center shadow-sm text-black bg-gray-50 font-bold"
+                        className="w-full pl-8 pr-9 py-1.5 rounded-full border border-gray-300 focus:outline-none focus:border-orange-500 text-xs text-center shadow-sm text-black bg-gray-50 font-bold placeholder:text-gray-400 placeholder:font-normal"
                     />
-                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                        <MicIcon className="h-3 w-3 text-gray-400" />
+                    <div className="absolute right-2.5 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+                        {searchTerm ? (
+                          <button
+                            type="button"
+                            onClick={() => setSearchTerm('')}
+                            className="p-0.5 rounded-full hover:bg-gray-200 text-gray-500 transition-all cursor-pointer"
+                            title="Effacer"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        ) : (
+                          <MicIcon className="h-3 w-3 text-gray-400" />
+                        )}
                     </div>
                     <div className="absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
                         <SearchIcon className="h-3 w-3 text-gray-400" />
@@ -693,41 +722,76 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
       
       <main className="flex-1 bg-gray-100 p-4 overflow-y-auto pb-24">
         {loading ? (
-            <div className="flex justify-center items-center h-64">
-                <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-orange-500"></div>
-            </div>
+            <WorkerSearchLoadingAnimation 
+              category={selectedCategory}
+              searchTerm={searchTerm}
+              variant="full"
+              message="Chargement des professionnels certifiés..."
+            />
+        ) : isSearchingTransition ? (
+            <WorkerSearchLoadingAnimation 
+              category={selectedCategory}
+              searchTerm={searchTerm}
+              variant="skeleton-only"
+              itemCount={2}
+            />
         ) : error ? (
-            <div className="p-4 text-center text-red-500 h-full">{error}</div>
+            <div className="p-4 text-center text-red-500 h-full font-bold">{error}</div>
         ) : (
             <div className="flex flex-col gap-6">
-                {filteredWorkers.map(worker => (
-                    <WorkerCard 
-                        key={worker.id} 
-                        worker={worker} 
-                        user={user}
-                        onScheduleService={onScheduleService}
-                        onOpenOnlineProviders={onOpenOnlineProviders}
-                        onOpenSiteWorkers={onOpenSiteWorkers}
-                        onStartRegistration={onStartRegistration}
-                        onOpenForm={onOpenForm}
-                        inscriptionsList={inscriptionsList}
-                        currentUserInscription={currentUserInscription}
-                        onShowAlreadyRegistered={() => setIsAlreadyRegisteredOpen(true)}
-                        onShowProviderAvailability={(info) => {
-                          setAvailabilityModalData({
-                            isOpen: true,
-                            title: info.title,
-                            providers: info.providers,
-                            onServiceClient: info.onServiceClient
-                          });
-                        }}
-                    />
-                ))}
+                <AnimatePresence mode="popLayout">
+                  {filteredWorkers.map((worker, index) => (
+                    <motion.div
+                      key={worker.id}
+                      initial={{ opacity: 0, y: 15, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ 
+                        duration: 0.25, 
+                        delay: Math.min(index * 0.04, 0.25),
+                        ease: "easeOut"
+                      }}
+                    >
+                      <WorkerCard 
+                          worker={worker} 
+                          user={user}
+                          onScheduleService={onScheduleService}
+                          onOpenOnlineProviders={onOpenOnlineProviders}
+                          onOpenSiteWorkers={onOpenSiteWorkers}
+                          onStartRegistration={onStartRegistration}
+                          onOpenForm={onOpenForm}
+                          inscriptionsList={inscriptionsList}
+                          currentUserInscription={currentUserInscription}
+                          onShowAlreadyRegistered={() => setIsAlreadyRegisteredOpen(true)}
+                          onShowProviderAvailability={(info) => {
+                            setAvailabilityModalData({
+                              isOpen: true,
+                              title: info.title,
+                              providers: info.providers,
+                              onServiceClient: info.onServiceClient
+                            });
+                          }}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
                 {filteredWorkers.length === 0 && (
-                    <div className="text-center mt-10">
-                        <p className="text-gray-500 mb-2">Aucun professionnel trouvé pour cette catégorie.</p>
-                        <p className="text-xs text-gray-400">Essayez une autre catégorie ou modifiez votre recherche.</p>
-                    </div>
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-center mt-10 bg-white p-8 rounded-[2rem] border border-gray-200 shadow-sm"
+                    >
+                        <p className="text-gray-700 font-extrabold text-sm mb-2">Aucun professionnel trouvé pour cette recherche.</p>
+                        <p className="text-xs text-gray-500">Essayez un autre mot-clé ou sélectionnez une autre catégorie.</p>
+                        {searchTerm && (
+                          <button
+                            onClick={() => setSearchTerm('')}
+                            className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-full text-xs font-bold shadow-md hover:bg-orange-600 active:scale-95 transition-all"
+                          >
+                            Réinitialiser la recherche
+                          </button>
+                        )}
+                    </motion.div>
                 )}
             </div>
         )}

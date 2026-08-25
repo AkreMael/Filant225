@@ -14,6 +14,7 @@ interface ChatMessage {
   sender: 'admin' | 'user';
   text: string;
   timestamp: number;
+  createdAtMs?: number;
   paymentInfo?: { link: string; amount: string } | null;
   whatsAppPayload?: string;
   providerPhone?: string;
@@ -61,7 +62,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, messageId: string | null, isBulk?: boolean}>({show: false, messageId: null});
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    show: boolean;
+    messageId: string | null;
+    isBulk?: boolean;
+    isAll?: boolean;
+  }>({ show: false, messageId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -192,9 +199,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
     return messages;
   }, [messages]);
 
-  // FIX FOR OUT-OF-ORDER AND SHUFFLING: Sort messages by timestamp ascending on the client!
+  // FIX FOR OUT-OF-ORDER AND SHUFFLING: Strict chronological sorting ascending by timestamp, tiebreaker by id
   const sortedMessages = useMemo(() => {
-    return [...displayMessages].sort((a, b) => a.timestamp - b.timestamp);
+    return [...displayMessages].sort((a, b) => {
+      const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+      if (timeDiff !== 0) return timeDiff;
+      return (a.id || '').localeCompare(b.id || '');
+    });
   }, [displayMessages]);
 
   useEffect(() => {
@@ -212,13 +223,15 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
     if (!textToSend) return;
 
     const sender = senderOverride || (isAdmin ? 'admin' : 'user');
-    const msgId = `${sender === 'admin' ? 'admin' : 'user'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const now = Date.now();
+    const msgId = `${sender === 'admin' ? 'admin' : 'user'}_${now}_${Math.random().toString(36).substr(2, 9)}`;
     
     const newMessage: ChatMessage = {
       id: msgId,
       sender: sender,
       text: textToSend,
-      timestamp: Date.now()
+      timestamp: now,
+      createdAtMs: now
     };
 
     // Optimistic update for immediate display
@@ -235,7 +248,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
           textareaRef.current.blur();
         }
       }
-      await databaseService.savePrivateChatMessage(chatUserId, newMessage);
+      await databaseService.saveTypedChatMessage(type as any, chatUserId, newMessage);
     } catch (error) {
       console.error("Error in handleSendMessage:", error);
     }
@@ -250,7 +263,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
     setIsUploadingVoice(true);
 
     const sender = isAdmin ? 'admin' : 'user';
-    const msgId = `${sender === 'admin' ? 'admin' : 'user'}_voice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const now = Date.now();
+    const msgId = `${sender === 'admin' ? 'admin' : 'user'}_voice_${now}_${Math.random().toString(36).substr(2, 9)}`;
     const localAudioUrl = URL.createObjectURL(audioBlob);
 
     // Initial optimistic voice message in conversation
@@ -262,7 +276,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       audioDuration: durationSeconds,
       transcription: liveTranscription || '',
       audioFileId: msgId,
-      timestamp: Date.now(),
+      timestamp: now,
+      createdAtMs: now,
       type: 'voice',
       isUploading: true
     };
@@ -313,7 +328,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         console.warn('[Chat] Server audio upload error:', uploadErr);
       }
 
-      // 5. Final message object
+      // 5. Final message object with immutable timestamp
       const finalMessage: ChatMessage = {
         id: msgId,
         sender: sender,
@@ -324,7 +339,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         audioDuration: durationSeconds,
         transcription: finalTranscription,
         type: 'voice',
-        timestamp: Date.now(),
+        timestamp: now,
+        createdAtMs: now,
         isUploading: false
       };
 
@@ -332,7 +348,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       setMessages(prev => prev.map(m => m.id === msgId ? finalMessage : m));
 
       // 6. Save metadata and direct audio to Firestore
-      await databaseService.savePrivateChatMessage(chatUserId, finalMessage);
+      await databaseService.saveTypedChatMessage(type as any, chatUserId, finalMessage);
     } catch (error) {
       console.error('[Chat] Error processing voice recording:', error);
     } finally {
@@ -361,21 +377,38 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
   };
 
   const handleDeleteMessage = async () => {
-    if (deleteConfirm.isBulk) {
+    setIsDeleting(true);
+    try {
+      if (deleteConfirm.isAll) {
+        const success = await databaseService.deleteAllTypedChatMessages(type as any, chatUserId);
+        if (success) {
+          setMessages([]);
+          setSelectedIds([]);
+          setDeleteConfirm({ show: false, messageId: null, isAll: false, isBulk: false });
+        }
+        return;
+      }
+
+      if (deleteConfirm.isBulk) {
         if (selectedIds.length === 0) return;
         const success = await databaseService.deleteMultipleTypedChatMessages(type as any, chatUserId, selectedIds);
         if (success) {
-            setSelectedIds([]);
-            setDeleteConfirm({show: false, messageId: null});
+          setSelectedIds([]);
+          setDeleteConfirm({ show: false, messageId: null, isAll: false, isBulk: false });
         }
         return;
-    }
+      }
 
-    if (!deleteConfirm.messageId) return;
-    
-    const success = await databaseService.deletePrivateChatMessage(chatUserId, deleteConfirm.messageId);
-    if (success) {
-      setDeleteConfirm({show: false, messageId: null});
+      if (deleteConfirm.messageId) {
+        const success = await databaseService.deleteTypedChatMessage(type as any, chatUserId, deleteConfirm.messageId);
+        if (success) {
+          setDeleteConfirm({ show: false, messageId: null, isAll: false, isBulk: false });
+        }
+      }
+    } catch (err) {
+      console.error("Error deleting message(s):", err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -410,34 +443,49 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
     >
       {/* WhatsApp Header: Elegant Green for Light Mode, Dark Slate for Dark Mode */}
       <header id="chat_header" className="bg-[#008069] dark:bg-[#1f2c34] text-white py-3 px-4 flex items-center justify-between shrink-0 z-20 shadow-md">
-        <div className="flex items-center gap-2">
-          <button id="btn_back_chat" onClick={onBack} className="p-1.5 -ml-1 rounded-full hover:bg-black/10 active:scale-95 transition-all text-white">
+        <div className="flex items-center gap-2 min-w-0">
+          <button id="btn_back_chat" onClick={onBack} className="p-1.5 -ml-1 rounded-full hover:bg-black/10 active:scale-95 transition-all text-white shrink-0">
             {isModal ? <X size={24} /> : <ChevronLeft size={24} />}
           </button>
           
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-[#128c7e] flex items-center justify-center text-white font-black text-sm relative shadow-inner border border-white/10">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-[#128c7e] flex items-center justify-center text-white font-black text-sm relative shadow-inner border border-white/10 shrink-0">
               {chatTitle?.charAt(0).toUpperCase()}
               <div className="w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-[#008069] dark:border-[#1f2c34] absolute bottom-0 right-0 animate-pulse"></div>
             </div>
             
-            <div className="flex flex-col">
-              <h2 className="text-sm font-black tracking-tight truncate max-w-[160px] sm:max-w-xs">{chatTitle}</h2>
+            <div className="flex flex-col min-w-0">
+              <h2 className="text-sm font-black tracking-tight truncate max-w-[130px] sm:max-w-xs">{chatTitle}</h2>
               <span className="text-[10px] font-bold opacity-80 uppercase tracking-widest">En ligne</span>
             </div>
           </div>
         </div>
 
-        {isAdmin && selectedIds.length > 0 && (
-          <button 
-            id="btn_delete_bulk"
-            onClick={() => setDeleteConfirm({show: true, messageId: null, isBulk: true})}
-            className="p-2 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all active:scale-95 flex items-center gap-1.5 shadow"
-          >
-            <Trash2 size={16} />
-            <span className="text-[10px] font-black">{selectedIds.length}</span>
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {isAdmin && selectedIds.length > 0 && (
+            <button 
+              id="btn_delete_bulk"
+              onClick={() => setDeleteConfirm({show: true, messageId: null, isBulk: true, isAll: false})}
+              className="px-2.5 py-1.5 bg-red-700 hover:bg-red-800 text-white rounded-xl transition-all active:scale-95 flex items-center gap-1.5 shadow border border-red-500"
+              title="Supprimer la sélection"
+            >
+              <Trash2 size={15} />
+              <span className="text-[10px] font-black">{selectedIds.length}</span>
+            </button>
+          )}
+
+          {isAdmin && (
+            <button
+              id="btn_delete_entire_chat"
+              onClick={() => setDeleteConfirm({ show: true, messageId: null, isAll: true, isBulk: false })}
+              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-md active:scale-95 transition-all border border-red-400 cursor-pointer"
+              title="Tout supprimer cette conversation"
+            >
+              <Trash2 size={15} className="text-white" />
+              <span>Tout supprimer</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Admin Quick Templates Bar */}
@@ -777,30 +825,45 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       {/* Confirmation of suppression Modal */}
       {deleteConfirm.show && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-[#2a3942] rounded-[2rem] p-8 w-full max-w-xs shadow-2xl text-center animate-in zoom-in-95 duration-200 border border-[#ffffff10]">
-            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-              <Trash2 size={24} />
+          <div className="bg-white dark:bg-[#2a3942] rounded-[2rem] p-6 sm:p-8 w-full max-w-sm shadow-2xl text-center animate-in zoom-in-95 duration-200 border border-[#ffffff10]">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-5 shadow-sm">
+              <Trash2 size={26} />
             </div>
             <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tighter mb-2">
-              {deleteConfirm.isBulk ? `Supprimer ${selectedIds.length} messages` : 'Supprimer le message'}
+              {deleteConfirm.isAll
+                ? "Tout supprimer"
+                : deleteConfirm.isBulk
+                ? `Supprimer ${selectedIds.length} messages`
+                : "Supprimer le message"}
             </h3>
-            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed mb-8">
-              {deleteConfirm.isBulk 
-                ? "Voulez-vous supprimer ces messages ? Cette action est irréversible." 
+            <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+              {deleteConfirm.isAll
+                ? "Êtes-vous sûr de vouloir supprimer TOUTE la conversation de ce prestataire ? Tous les messages texte et vocaux seront effacés définitivement pour vous et pour l'utilisateur."
+                : deleteConfirm.isBulk
+                ? "Voulez-vous supprimer ces messages ? Cette action est irréversible."
                 : "Voulez-vous supprimer ce message ? Cette action est irréversible."}
             </p>
             <div className="flex flex-col gap-3">
               <button 
                 id="btn_confirm_delete_yes"
+                disabled={isDeleting}
                 onClick={handleDeleteMessage}
-                className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black uppercase tracking-wider text-[10px] shadow-md active:scale-95 transition-all text-center cursor-pointer"
+                className="w-full py-3.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-2xl font-black uppercase tracking-wider text-xs shadow-md active:scale-95 transition-all text-center cursor-pointer flex items-center justify-center gap-2"
               >
-                Oui, supprimer
+                {isDeleting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Suppression en cours...</span>
+                  </>
+                ) : (
+                  <span>{deleteConfirm.isAll ? "Oui, tout supprimer" : "Oui, supprimer"}</span>
+                )}
               </button>
               <button 
                 id="btn_confirm_delete_no"
-                onClick={() => setDeleteConfirm({show: false, messageId: null, isBulk: false})}
-                className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase tracking-wider text-[10px] active:scale-95 transition-all text-center cursor-pointer"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirm({show: false, messageId: null, isBulk: false, isAll: false})}
+                className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl font-black uppercase tracking-wider text-xs active:scale-95 transition-all text-center cursor-pointer"
               >
                 Annuler
               </button>

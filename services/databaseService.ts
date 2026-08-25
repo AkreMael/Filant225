@@ -3531,7 +3531,8 @@ export const databaseService = {
       else if (isValid(message.city)) finalCity = message.city;
 
       // Use a consistent ID across collections
-      const msgId = message.id || `${message.sender}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const now = typeof message.timestamp === 'number' && message.timestamp > 0 ? message.timestamp : Date.now();
+      const msgId = message.id || `${message.sender}_${now}_${Math.random().toString(36).substr(2, 9)}`;
 
       const isAdminSender = message.sender === 'admin';
       const rawDocData = {
@@ -3541,7 +3542,8 @@ export const databaseService = {
         userName: finalName,
         phone: user?.phone || userId,
         city: finalCity,
-        timestamp: serverTimestamp(),
+        timestamp: now,
+        createdAtMs: now,
         isRead: message.isRead !== undefined ? message.isRead : (isAdminSender ? false : true),
         adminReadStatus: message.adminReadStatus || (isAdminSender ? 'LU' : 'NON LU')
       };
@@ -3825,15 +3827,41 @@ export const databaseService = {
     }
   },
 
+  deleteTypedChatMessage: async (type: 'Assistant' | 'Privee', chatUserId: string, messageId: string) => {
+    return databaseService.deleteMultipleTypedChatMessages(type, chatUserId, [messageId]);
+  },
+
+  deletePrivateChatMessage: async (chatUserId: string, messageId: string) => {
+    return databaseService.deleteMultipleTypedChatMessages('Privee', chatUserId, [messageId]);
+  },
+
+  deleteAssistantChatMessage: async (chatUserId: string, messageId: string) => {
+    return databaseService.deleteMultipleTypedChatMessages('Assistant', chatUserId, [messageId]);
+  },
+
+  deleteMultiplePrivateChatMessages: async (chatUserId: string, messageIds: string[]) => {
+    return databaseService.deleteMultipleTypedChatMessages('Privee', chatUserId, messageIds);
+  },
+
   deleteMultipleTypedChatMessages: async (type: 'Assistant' | 'Privee', chatUserId: string, messageIds: string[]) => {
     try {
-      const userId = chatUserId.replace(/\D/g, '');
+      await databaseService.ensureAuth();
+      const raw = (chatUserId || '').replace(/\D/g, '');
       const collectionName = `Messagerie${type}`;
+      const variants = [raw];
+      if (raw.startsWith('225') && raw.length > 10) {
+        variants.push(raw.slice(3));
+      } else if (!raw.startsWith('225') && raw.length === 10) {
+        variants.push(`225${raw}`);
+      }
+
       const batch = writeBatch(db);
       
       messageIds.forEach(id => {
-        // Delete from user subcollection
-        batch.delete(doc(db, collectionName, userId, 'messages', id));
+        // Delete from all user subcollections
+        variants.forEach(uid => {
+          batch.delete(doc(db, collectionName, uid, 'messages', id));
+        });
         // Delete from global collection
         batch.delete(doc(db, collectionName, id));
       });
@@ -3842,6 +3870,96 @@ export const databaseService = {
       return true;
     } catch (e) {
       console.error(`Error deleting multiple ${type} messages:`, e);
+      return false;
+    }
+  },
+
+  deleteAllPrivateChatMessages: async (chatUserId: string) => {
+    return databaseService.deleteAllTypedChatMessages('Privee', chatUserId);
+  },
+
+  deleteAllAssistantChatMessages: async (chatUserId: string) => {
+    return databaseService.deleteAllTypedChatMessages('Assistant', chatUserId);
+  },
+
+  deleteAllTypedChatMessages: async (type: 'Assistant' | 'Privee', chatUserId: string) => {
+    try {
+      await databaseService.ensureAuth();
+      const raw = (chatUserId || '').replace(/\D/g, '');
+      if (!raw) return false;
+      const collectionName = `Messagerie${type}`;
+
+      const variants = [raw];
+      if (raw.startsWith('225') && raw.length > 10) {
+        variants.push(raw.slice(3));
+      } else if (!raw.startsWith('225') && raw.length === 10) {
+        variants.push(`225${raw}`);
+      }
+
+      // Collect all doc refs to delete
+      const docRefsToDelete: any[] = [];
+
+      // 1. Delete from all user subcollections
+      for (const uid of variants) {
+        try {
+          const userMessagesRef = collection(db, collectionName, uid, 'messages');
+          const snap = await getDocs(userMessagesRef);
+          snap.docs.forEach(d => {
+            docRefsToDelete.push(d.ref);
+          });
+        } catch (e) {
+          console.warn(`Error querying subcollection for ${uid}:`, e);
+        }
+      }
+
+      // 2. Delete from global collection
+      for (const uid of variants) {
+        try {
+          const q1 = query(collection(db, collectionName), where('userId', '==', uid));
+          const snap1 = await getDocs(q1);
+          snap1.docs.forEach(d => {
+            docRefsToDelete.push(d.ref);
+          });
+        } catch (e) {
+          console.warn(`Error querying global userId for ${uid}:`, e);
+        }
+
+        try {
+          const q2 = query(collection(db, collectionName), where('phone', '==', uid));
+          const snap2 = await getDocs(q2);
+          snap2.docs.forEach(d => {
+            docRefsToDelete.push(d.ref);
+          });
+        } catch (e) {
+          console.warn(`Error querying global phone for ${uid}:`, e);
+        }
+      }
+
+      // 3. Batch commit deletions in chunks of 400
+      const uniqueRefsMap = new Map<string, any>();
+      docRefsToDelete.forEach(r => uniqueRefsMap.set(r.path, r));
+      const uniqueRefs = Array.from(uniqueRefsMap.values());
+
+      for (let i = 0; i < uniqueRefs.length; i += 400) {
+        const batch = writeBatch(db);
+        const chunk = uniqueRefs.slice(i, i + 400);
+        chunk.forEach(r => batch.delete(r));
+        await batch.commit();
+      }
+
+      // 4. Remove typing status & flags in RTDB
+      for (const uid of variants) {
+        try {
+          const typingRef = rtdbRef(rtdb, `TypingStatus/${type}/${uid}`);
+          await set(typingRef, null);
+        } catch (e) {
+          // ignore RTDB error
+        }
+      }
+
+      return true;
+    } catch (e) {
+      console.error(`Error in deleteAllTypedChatMessages for ${chatUserId}:`, e);
       return false;
     }
   },
@@ -3872,37 +3990,82 @@ export const databaseService = {
     const messageMaps: { [key: string]: any[] } = {};
     const unsubs: (() => void)[] = [];
 
+    const getMessageTs = (data: any, docId: string): number => {
+      if (typeof data.createdAtMs === 'number' && data.createdAtMs > 0) {
+        return data.createdAtMs;
+      }
+      if (typeof data.timestamp === 'number' && data.timestamp > 0) {
+        return data.timestamp;
+      }
+      if (data.timestamp && typeof data.timestamp.toMillis === 'function') {
+        return data.timestamp.toMillis();
+      }
+      if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+        return data.timestamp.toDate().getTime();
+      }
+      if (typeof data.timestamp === 'string') {
+        const num = Number(data.timestamp);
+        if (!isNaN(num) && num > 0) return num;
+        const parsed = new Date(data.timestamp).getTime();
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+      if (data.createdAt && typeof data.createdAt.toMillis === 'function') {
+        return data.createdAt.toMillis();
+      }
+      // Extract from docId if standard format (e.g. sender_1740000000000_xxx)
+      if (docId) {
+        const parts = docId.split('_');
+        for (const p of parts) {
+          const num = parseInt(p, 10);
+          if (!isNaN(num) && num > 1500000000000 && num < 3000000000000) {
+            return num;
+          }
+        }
+      }
+      return data._localTs || 0;
+    };
+
     const emitMerged = () => {
       const allMsgs = Object.values(messageMaps).flat();
       const uniqueMap = new Map<string, any>();
+      
       allMsgs.forEach(m => {
-        if (m.id) {
+        if (!m.id) return;
+        const existing = uniqueMap.get(m.id);
+        if (!existing) {
           uniqueMap.set(m.id, m);
+        } else {
+          // Keep original earlier timestamp to preserve perfect stability
+          const existingTs = existing.timestamp || 0;
+          const newTs = m.timestamp || 0;
+          let stableTs = existingTs;
+          if (existingTs === 0 && newTs > 0) stableTs = newTs;
+          else if (newTs > 0 && newTs < existingTs) stableTs = newTs;
+
+          uniqueMap.set(m.id, {
+            ...existing,
+            ...m,
+            timestamp: stableTs || existingTs || newTs
+          });
         }
       });
-      const sorted = Array.from(uniqueMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+      // Strict chronological sorting: ascending by timestamp, tiebreaker by id
+      const sorted = Array.from(uniqueMap.values()).sort((a, b) => {
+        const timeDiff = (a.timestamp || 0) - (b.timestamp || 0);
+        if (timeDiff !== 0) return timeDiff;
+        return (a.id || '').localeCompare(b.id || '');
+      });
+
       callback(sorted);
     };
 
     variants.forEach(uid => {
-      const q = query(
-        collection(db, collectionName, uid, 'messages'),
-        orderBy('timestamp', 'asc')
-      );
+      const q = collection(db, collectionName, uid, 'messages');
       const unsub = onSnapshot(q, (snapshot) => {
         messageMaps[uid] = snapshot.docs.map(doc => {
           const data = doc.data();
-          let ts = Date.now();
-          if (data.timestamp) {
-            if (data.timestamp.toMillis) {
-              ts = data.timestamp.toMillis();
-            } else if (typeof data.timestamp === 'number') {
-              ts = data.timestamp;
-            } else if (typeof data.timestamp === 'string') {
-              const parsed = new Date(data.timestamp).getTime();
-              if (!isNaN(parsed)) ts = parsed;
-            }
-          }
+          const ts = getMessageTs(data, doc.id);
           return {
             ...data,
             id: doc.id,
@@ -3998,39 +4161,8 @@ export const databaseService = {
     }
   },
 
-  deleteAssistantChatMessage: async (chatUserId: string, messageId: string) => {
-    return databaseService.deleteTypedChatMessage('Assistant', chatUserId, messageId);
-  },
-
   clearAssistantChatHistory: async (chatUserId: string) => {
-    try {
-      const userId = chatUserId.replace(/\D/g, '');
-      const messagesRef = collection(db, 'MessagerieAssistant', userId, 'messages');
-      const snapshot = await getDocs(messagesRef);
-      const batch = writeBatch(db);
-      snapshot.docs.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-      return true;
-    } catch (e) {
-      console.error("Error clearing assistant chat history in Firebase:", e);
-      return false;
-    }
-  },
-
-  deletePrivateChatMessage: async (chatUserId: string, messageId: string) => {
-    return databaseService.deleteTypedChatMessage('Privee', chatUserId, messageId);
-  },
-
-  deleteTypedChatMessage: async (type: 'Assistant' | 'Privee', chatUserId: string, messageId: string) => {
-    try {
-      const userId = chatUserId.replace(/\D/g, '');
-      const collectionName = `Messagerie${type}`;
-      const batch = writeBatch(db);
-      batch.delete(doc(db, collectionName, userId, 'messages', messageId));
-      batch.delete(doc(db, collectionName, messageId));
-      await batch.commit();
-      return true;
-    } catch (e) { return false; }
+    return databaseService.deleteAllAssistantChatMessages(chatUserId);
   },
 
   saveFormSubmission: async (formData: any) => {

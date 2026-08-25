@@ -11,6 +11,7 @@ import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { encodeAdId, decodeAdId } from '../utils/shareUtils';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
+import { WorkerSearchLoadingAnimation } from './WorkerSearchLoadingAnimation';
 
 interface InscriptionResult {
   id: string;
@@ -2225,15 +2226,12 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
               if (isOnlineAndActive) {
                 return (
                   <button
-                    onClick={() => {
-                      if (onShowRegistration) onShowRegistration();
-                      else handleOpenOnlineForm();
-                    }}
-                    className="py-4 px-6 rounded-2xl font-black uppercase text-xs tracking-wider transition-all duration-200 shadow-md flex items-center justify-center gap-2 shrink-0 active:scale-95 bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                    title="Cliquer pour voir/modifier votre profil"
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="py-2 px-3.5 rounded-xl font-bold text-xs bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100 border border-slate-300 dark:border-slate-600 flex items-center justify-center text-center self-center sm:self-auto shrink-0 shadow-none cursor-default select-none pointer-events-none"
                   >
-                    <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping shrink-0" />
-                    <span>Vous êtes en ligne jusqu'au : {expirationDateStr}</span>
+                    <span>Renouvellement chaque mois pour votre profil</span>
                   </button>
                 );
               }
@@ -2308,19 +2306,15 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
           )}
         </div>
 
-        {/* Loading Spinner Area */}
+        {/* Loading Animation Area */}
         {(isLoading || isInitialLoading) && (
-          <div className="bg-white rounded-3xl p-10 shadow-lg border border-slate-100 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-orange-500/20 rounded-full animate-pulse"></div>
-              <div className="absolute inset-0 w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-base font-black uppercase tracking-wide text-slate-900">
-                {isInitialLoading ? "Chargement des cartes..." : "Recherche en cours..."}
-              </h4>
-              <p className="text-xs text-slate-400 font-bold">Synchronisation en direct avec FILANT°225</p>
-            </div>
+          <div className="py-2">
+            <WorkerSearchLoadingAnimation 
+              searchTerm={queryInput}
+              message={isInitialLoading ? "Chargement des profils en ligne..." : "Recherche des professionnels en cours..."}
+              variant="full"
+              itemCount={2}
+            />
           </div>
         )}
 
