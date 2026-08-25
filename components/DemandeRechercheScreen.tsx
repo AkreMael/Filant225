@@ -1345,7 +1345,7 @@ export const DemandeRechercheScreen: React.FC<DemandeRechercheScreenProps> = ({ 
       return;
     }
     setFormErrors('');
-    const amount = travailleurMode === 'Embauche' ? 6530 : Math.min(travailleurJours * 653, 6530);
+    const amount = 2300;
 
     if (!selectedItemForForm) return;
 

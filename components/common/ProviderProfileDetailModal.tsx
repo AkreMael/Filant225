@@ -497,11 +497,15 @@ export const ProviderProfileDetailModal: React.FC<ProviderProfileDetailModalProp
             isOnline ? (
               <button
                 type="button"
-                onClick={handleServiceDemandClick}
-                className="w-full py-4 px-6 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-2xl font-black text-sm tracking-wider uppercase shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2.5 transition-all cursor-pointer border border-emerald-400/30"
+                disabled={true}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className="w-full py-4 px-6 bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-2xl font-black text-sm sm:text-base tracking-wider uppercase cursor-not-allowed select-none border border-slate-300 dark:border-slate-600 shadow-none flex items-center justify-center gap-2.5 opacity-80"
               >
-                <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping shrink-0" />
-                <span>PROFIL EN LIGNE</span>
+                <MapPin className="w-5 h-5 stroke-[2.5] text-slate-400 dark:text-slate-500" />
+                <span>DEMANDE DE SERVICE</span>
               </button>
             ) : (
               <button

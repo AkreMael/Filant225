@@ -3515,7 +3515,8 @@ export const databaseService = {
 
   saveTypedChatMessage: async (type: 'Assistant' | 'Privee', chatUserId: string, message: any) => {
     try {
-      const userId = chatUserId.replace(/\D/g, '');
+      const userId = (chatUserId || '').replace(/\D/g, '');
+      if (!userId) return false;
       const user = databaseService.getActiveUser();
       const collectionName = `Messagerie${type}`;
       
@@ -3546,8 +3547,21 @@ export const databaseService = {
       };
       const docData = cleanUndefinedForFirestore(rawDocData);
 
-      // 1. Save to the user's specific conversation for sync across devices
-      await setDoc(doc(db, collectionName, userId, 'messages', msgId), docData);
+      // 1. Save to the user's specific conversation variants for sync across devices
+      const variants = [userId];
+      if (userId.startsWith('225') && userId.length > 10) {
+        variants.push(userId.slice(3));
+      } else if (!userId.startsWith('225') && userId.length === 10) {
+        variants.push(`225${userId}`);
+      }
+
+      for (const uid of variants) {
+        try {
+          await setDoc(doc(db, collectionName, uid, 'messages', msgId), docData);
+        } catch (variantErr) {
+          // ignore variant errors
+        }
+      }
       
       // 2. Save to the global history for admin overview
       await setDoc(doc(db, collectionName, msgId), {
@@ -3841,23 +3855,68 @@ export const databaseService = {
   },
 
   onTypedChatUpdate: (type: 'Assistant' | 'Privee', chatUserId: string, callback: (messages: any[]) => void) => {
-    const userId = chatUserId.replace(/\D/g, '');
+    const raw = (chatUserId || '').replace(/\D/g, '');
     const collectionName = `Messagerie${type}`;
-    const q = query(
-      collection(db, collectionName, userId, 'messages'),
-      orderBy('timestamp', 'asc')
-    );
-    return onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id, // Always use the Firestore document ID for CRUD operations
-          timestamp: data.timestamp?.toMillis ? data.timestamp.toMillis() : (data.timestamp || Date.now())
-        };
+    if (!raw) {
+      callback([]);
+      return () => {};
+    }
+
+    const variants = [raw];
+    if (raw.startsWith('225') && raw.length > 10) {
+      variants.push(raw.slice(3));
+    } else if (!raw.startsWith('225') && raw.length === 10) {
+      variants.push(`225${raw}`);
+    }
+
+    const messageMaps: { [key: string]: any[] } = {};
+    const unsubs: (() => void)[] = [];
+
+    const emitMerged = () => {
+      const allMsgs = Object.values(messageMaps).flat();
+      const uniqueMap = new Map<string, any>();
+      allMsgs.forEach(m => {
+        if (m.id) {
+          uniqueMap.set(m.id, m);
+        }
       });
-      callback(msgs);
-    }, (error) => console.error(`${type} Chat sync error:`, error));
+      const sorted = Array.from(uniqueMap.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      callback(sorted);
+    };
+
+    variants.forEach(uid => {
+      const q = query(
+        collection(db, collectionName, uid, 'messages'),
+        orderBy('timestamp', 'asc')
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        messageMaps[uid] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          let ts = Date.now();
+          if (data.timestamp) {
+            if (data.timestamp.toMillis) {
+              ts = data.timestamp.toMillis();
+            } else if (typeof data.timestamp === 'number') {
+              ts = data.timestamp;
+            } else if (typeof data.timestamp === 'string') {
+              const parsed = new Date(data.timestamp).getTime();
+              if (!isNaN(parsed)) ts = parsed;
+            }
+          }
+          return {
+            ...data,
+            id: doc.id,
+            timestamp: ts
+          };
+        });
+        emitMerged();
+      }, (error) => console.error(`${type} Chat sync error for ${uid}:`, error));
+      unsubs.push(unsub);
+    });
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
   },
 
   markAssistantMessagesAsRead: async (chatUserId: string, side: 'user' | 'admin') => {
@@ -3871,50 +3930,65 @@ export const databaseService = {
   markTypedMessagesAsRead: async (type: 'Assistant' | 'Privee', chatUserId: string, side: 'user' | 'admin') => {
     try {
       await databaseService.ensureAuth();
-      const userId = chatUserId.replace(/\D/g, '');
+      const raw = (chatUserId || '').replace(/\D/g, '');
+      if (!raw) return;
       const collectionName = `Messagerie${type}`;
-      const q = query(
-        collection(db, collectionName, userId, 'messages'),
-        where('sender', '==', side),
-        where(side === 'user' ? 'adminReadStatus' : 'isRead', '==', side === 'user' ? 'NON LU' : false)
-      );
-      const snapshot = await getDocs(q);
+
+      const variants = [raw];
+      if (raw.startsWith('225') && raw.length > 10) {
+        variants.push(raw.slice(3));
+      } else if (!raw.startsWith('225') && raw.length === 10) {
+        variants.push(`225${raw}`);
+      }
 
       const batch = writeBatch(db);
-      
-      if (!snapshot.empty) {
-        snapshot.docs.forEach(d => {
-          const updateData: any = {};
-          if (side === 'user') {
-            updateData.adminReadStatus = 'VU';
-          } else {
-            updateData.isRead = true;
+
+      for (const userId of variants) {
+        try {
+          const q = query(
+            collection(db, collectionName, userId, 'messages'),
+            where('sender', '==', side),
+            where(side === 'user' ? 'adminReadStatus' : 'isRead', '==', side === 'user' ? 'NON LU' : false)
+          );
+          const snapshot = await getDocs(q);
+
+          if (!snapshot.empty) {
+            snapshot.docs.forEach(d => {
+              const updateData: any = {};
+              if (side === 'user') {
+                updateData.adminReadStatus = 'VU';
+              } else {
+                updateData.isRead = true;
+              }
+              
+              batch.update(d.ref, updateData);
+              
+              if (side === 'user') {
+                batch.set(doc(db, collectionName, d.id), updateData, { merge: true });
+              }
+            });
           }
-          
-          // Update subcollection doc
-          batch.update(d.ref, updateData);
-          
-          // For user messages, also update global collection doc if it exists using set merge
-          if (side === 'user') {
-            batch.set(doc(db, collectionName, d.id), updateData, { merge: true });
-          }
-        });
+        } catch (err) {
+          // ignore single variant error
+        }
       }
 
       // Also ensure any global collection documents for this user are marked as VU for admin
       if (side === 'user') {
-        try {
-          const qGlobal = query(
-            collection(db, collectionName),
-            where('userId', '==', userId),
-            where('adminReadStatus', '==', 'NON LU')
-          );
-          const snapGlobal = await getDocs(qGlobal);
-          snapGlobal.docs.forEach(d => {
-            batch.set(d.ref, { adminReadStatus: 'VU' }, { merge: true });
-          });
-        } catch (globalErr) {
-          console.warn(`Notice on global ${type} read update:`, globalErr);
+        for (const userId of variants) {
+          try {
+            const qGlobal = query(
+              collection(db, collectionName),
+              where('userId', '==', userId),
+              where('adminReadStatus', '==', 'NON LU')
+            );
+            const snapGlobal = await getDocs(qGlobal);
+            snapGlobal.docs.forEach(d => {
+              batch.set(d.ref, { adminReadStatus: 'VU' }, { merge: true });
+            });
+          } catch (globalErr) {
+            // ignore
+          }
         }
       }
       

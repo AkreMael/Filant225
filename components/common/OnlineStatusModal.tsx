@@ -104,69 +104,113 @@ export function isUserRegistrationOnline(user: any, inscriptions: any[], userIns
   return found ? isInscriptionOnlineAndActive(found) : false;
 }
 
+export function findUserOnlineProfile(user: any, inscriptions: any[] = [], userInscriptionData?: any): any | null {
+  if (userInscriptionData && (isInscriptionOnlineAndActive(userInscriptionData) || userInscriptionData.isOnline || userInscriptionData.onlineApproved)) {
+    return userInscriptionData;
+  }
+  if (!user?.phone) return userInscriptionData || null;
+  const cleanPhone = String(user.phone || '').replace(/\D/g, '');
+
+  const found = inscriptions.find(item => {
+    const itemPhone = String(item.phone || item.id || '').replace(/\D/g, '');
+    const isPhoneMatch = cleanPhone && itemPhone && (itemPhone.includes(cleanPhone) || cleanPhone.includes(itemPhone));
+    const isIdMatch = user.id && (item.userId === user.id || item.id === user.id);
+    return isPhoneMatch || isIdMatch;
+  });
+
+  return found || userInscriptionData || null;
+}
+
 // --- MODAL 1: ALREADY REGISTERED AND ONLINE ---
 interface AlreadyRegisteredModalProps {
   isOpen: boolean;
   onClose: () => void;
   onViewProfile: () => void;
+  userProfile?: any;
 }
 
 export const AlreadyRegisteredModal: React.FC<AlreadyRegisteredModalProps> = ({
   isOpen,
   onClose,
-  onViewProfile
+  onViewProfile,
+  userProfile
 }) => {
+  const [showDetailModal, setShowDetailModal] = useState(false);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border-2 border-emerald-500 flex flex-col items-center text-center relative animate-in zoom-in-95 duration-200">
-        <button 
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
-          title="Fermer"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4 shadow-inner">
-          <UserCheck className="w-9 h-9" />
-        </div>
-
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-black uppercase tracking-wider mb-2 border border-emerald-200">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Profil en ligne
-        </div>
-
-        <h3 className="text-lg font-black text-gray-900 mb-2">
-          Inscription terminée
-        </h3>
-
-        <p className="text-sm text-gray-600 font-medium leading-relaxed mb-6">
-          Vous avez déjà terminé votre inscription, votre profil est déjà en ligne.
-        </p>
-
-        <div className="w-full flex flex-col gap-2.5">
-          <button
-            onClick={() => {
-              onClose();
-              onViewProfile();
-            }}
-            className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-2xl font-black text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Eye className="w-4 h-4" />
-            <span>Voir mon profil</span>
-          </button>
-
-          <button
+    <>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border-2 border-emerald-500 flex flex-col items-center text-center relative animate-in zoom-in-95 duration-200">
+          <button 
             onClick={onClose}
-            className="w-full py-2.5 px-4 bg-gray-100 hover:bg-gray-200 active:scale-98 text-gray-700 rounded-2xl font-bold text-xs transition-all"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
+            title="Fermer"
           >
-            Fermer
+            <X className="w-5 h-5" />
           </button>
+
+          <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4 shadow-inner">
+            <UserCheck className="w-9 h-9" />
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-black uppercase tracking-wider mb-2 border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Profil en ligne
+          </div>
+
+          <h3 className="text-lg font-black text-gray-900 mb-2">
+            Inscription terminée
+          </h3>
+
+          <p className="text-sm text-gray-600 font-medium leading-relaxed mb-6">
+            Vous avez déjà terminé votre inscription, votre profil est déjà en ligne.
+          </p>
+
+          <div className="w-full flex flex-col gap-2.5">
+            <button
+              onClick={() => {
+                if (userProfile) {
+                  setShowDetailModal(true);
+                } else {
+                  onClose();
+                  onViewProfile();
+                }
+              }}
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white rounded-2xl font-black text-sm shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Voir mon profil</span>
+            </button>
+
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 px-4 bg-gray-100 hover:bg-gray-200 active:scale-98 text-gray-700 rounded-2xl font-bold text-xs transition-all"
+            >
+              Fermer
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+
+      {showDetailModal && userProfile && (
+        <ProviderProfileDetailModal
+          isOpen={showDetailModal}
+          onClose={() => {
+            setShowDetailModal(false);
+            onClose();
+          }}
+          provider={userProfile}
+          fallbackTitle={userProfile.titleOrActivity || userProfile.job || userProfile.equipmentType || userProfile.companyName || 'Mon Profil'}
+          currentUserPhone={userProfile.phone}
+          onContinueToForm={() => {
+            setShowDetailModal(false);
+            onClose();
+          }}
+        />
+      )}
+    </>
   );
 };
 

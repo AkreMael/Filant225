@@ -10,6 +10,7 @@ import {
   ProviderAvailabilityModal, 
   matchInscriptionsForTitle, 
   isUserRegistrationOnline,
+  findUserOnlineProfile,
   getProviderName,
   getProviderMetier,
   getProviderCity,
@@ -554,6 +555,7 @@ const LocationScreen: React.FC<LocationScreenProps> = ({
       <AlreadyRegisteredModal
         isOpen={isAlreadyRegisteredOpen}
         onClose={() => setIsAlreadyRegisteredOpen(false)}
+        userProfile={findUserOnlineProfile(user, inscriptionsList, currentUserInscription)}
         onViewProfile={() => {
           if (onViewMyProfile) {
             onViewMyProfile();

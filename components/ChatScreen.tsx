@@ -27,6 +27,7 @@ interface ChatMessage {
   adminReadStatus?: 'LU' | 'NON LU' | 'VU';
   type?: string;
   audioUrl?: string;
+  audioBase64?: string;
   audioDuration?: number;
   transcription?: string;
   audioFileId?: string;
@@ -188,10 +189,8 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
   }, [chatUserId, isAdmin]);
 
   const displayMessages = useMemo(() => {
-    if (isAdmin) return messages;
-    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
-    return messages.filter(msg => msg.timestamp > twentyFourHoursAgo);
-  }, [messages, isAdmin]);
+    return messages;
+  }, [messages]);
 
   // FIX FOR OUT-OF-ORDER AND SHUFFLING: Sort messages by timestamp ascending on the client!
   const sortedMessages = useMemo(() => {
@@ -314,12 +313,13 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
         console.warn('[Chat] Server audio upload error:', uploadErr);
       }
 
-      // 5. Final message object - Only metadata & server URL stored in database
+      // 5. Final message object
       const finalMessage: ChatMessage = {
         id: msgId,
         sender: sender,
         text: finalTranscription ? `🎤 ${finalTranscription}` : '🎤 Message vocal',
-        audioUrl: serverAudioUrl || localAudioUrl,
+        audioUrl: serverAudioUrl || audioBase64 || localAudioUrl,
+        audioBase64: audioBase64,
         audioFileId: msgId,
         audioDuration: durationSeconds,
         transcription: finalTranscription,
@@ -331,7 +331,7 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
       // Update optimistic state
       setMessages(prev => prev.map(m => m.id === msgId ? finalMessage : m));
 
-      // 6. Save metadata to Firestore (No binary audio in Firebase Storage)
+      // 6. Save metadata and direct audio to Firestore
       await databaseService.savePrivateChatMessage(chatUserId, finalMessage);
     } catch (error) {
       console.error('[Chat] Error processing voice recording:', error);
@@ -533,9 +533,10 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ currentUser, targetUser, isAdmi
                           : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-tl-none border border-slate-100 dark:border-0'
                       }`}
                     >
-                      {msg.audioUrl ? (
+                      {(msg.audioUrl || msg.audioBase64) ? (
                         <VoiceMessagePlayer 
                           audioUrl={msg.audioUrl} 
+                          audioBase64={msg.audioBase64}
                           audioDuration={msg.audioDuration} 
                           transcription={msg.transcription} 
                           isMe={isMe} 

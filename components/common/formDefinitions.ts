@@ -277,6 +277,8 @@ export const calculateTotalPrice = (formType: string, answers: Answers, serviceM
         return 100;
     }
 
+    const safeCount = Math.min(Math.max(1, count), 8);
+
     // 1. Détecter le type de formulaire
     const apartmentTitles = ['Studio à louer', 'Villa à louer', 'Chambre-salon à louer', 'Petit local à louer', 'Magasin à louer'];
     const isAppart = apartmentTitles.some(t => title.includes(t)) || title.toLowerCase().includes('appartement');
@@ -288,29 +290,12 @@ export const calculateTotalPrice = (formType: string, answers: Answers, serviceM
         return 530;
     }
 
-    const duration = answers.serviceDuration || answers.workDuration || answers.duration;
-
-    // 3. Logique pour les Travailleurs (Multiplication automatique selon la demande)
+    // 3. Logique pour tous les Travailleurs (2 300 FCFA par personne fixe, sans changement selon le nombre de jours)
     if (isWorker) {
-        let baseFee = 530; // Frais de base par personne
-
-        if (serviceMode === 'Embauche') {
-            baseFee = 6530;
-        } else if (duration) {
-            if (duration === 'Par mois') {
-                baseFee = 6530;
-            } else {
-                const daysMatch = (duration as string).match(/(\d+)/);
-                if (daysMatch) {
-                    const days = parseInt(daysMatch[1], 10);
-                    // 653 CFA par jour par personne, plafonné à 6530 par personne
-                    baseFee = Math.min(days * 653, 6530);
-                }
-            }
-        }
-        
-        return baseFee * count;
+        return 2300 * safeCount;
     }
+
+    const duration = answers.serviceDuration || answers.workDuration || answers.duration;
 
     // 4. Logique pour les autres types (Immobilier, Urgences, etc.)
     // On conserve le plafond global de 6530 CFA pour ces cas
@@ -321,16 +306,16 @@ export const calculateTotalPrice = (formType: string, answers: Answers, serviceM
         const daysMatch = (duration as string).match(/(\d+)/);
         if (daysMatch) {
             const days = parseInt(daysMatch[1], 10);
-            const calculated = days * 653 * count;
+            const calculated = days * 653 * safeCount;
             return Math.min(calculated, 6530);
         }
     }
 
     if (serviceMode === 'Embauche') {
-        return Math.min(6530 * count, 6530);
+        return Math.min(6530 * safeCount, 6530);
     }
 
-    return Math.min(530 * count, 6530);
+    return Math.min(530 * safeCount, 6530);
 };
 
 // --- FORM QUESTIONS ---

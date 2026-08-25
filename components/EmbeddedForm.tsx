@@ -641,7 +641,7 @@ const EmbeddedForm: React.FC<EmbeddedFormProps> = ({
                       <div className="flex items-center gap-6">
                           <button onClick={() => setCount(Math.max(1, count - 1))} className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center text-xl font-bold active:bg-gray-50">-</button>
                           <span className="text-3xl font-black text-black w-8 text-center">{count}</span>
-                          <button onClick={() => setCount(count + 1)} className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center text-xl font-bold active:bg-gray-50">+</button>
+                          <button onClick={() => setCount(Math.min(8, count + 1))} className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center text-xl font-bold active:bg-gray-50">+</button>
                       </div>
                   </div>
                 )}

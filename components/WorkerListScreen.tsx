@@ -12,6 +12,7 @@ import {
   ProviderAvailabilityModal, 
   matchInscriptionsForTitle, 
   isUserRegistrationOnline,
+  findUserOnlineProfile,
   getProviderName,
   getProviderMetier,
   getProviderCity,
@@ -736,6 +737,7 @@ const WorkerListScreen: React.FC<WorkerListScreenProps> = ({
       <AlreadyRegisteredModal
         isOpen={isAlreadyRegisteredOpen}
         onClose={() => setIsAlreadyRegisteredOpen(false)}
+        userProfile={findUserOnlineProfile(user, inscriptionsList, currentUserInscription)}
         onViewProfile={() => {
           if (onViewMyProfile) {
             onViewMyProfile();
