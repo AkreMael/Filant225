@@ -2010,6 +2010,10 @@ const App: React.FC = () => {
             deferredPrompt={deferredPrompt}
             onInstallPWA={handleInstallPWA}
             onToggleProfile={handleToggleProfile}
+            onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
+            onOpenForm={(context) => setInteractiveModalContext(context)}
+            onOpenOnlineProviders={handleOpenOnlineProviders}
+            onViewMyProfile={() => setIsProfileOpen(true)}
           />;
           break;
       }
@@ -2131,6 +2135,10 @@ const App: React.FC = () => {
         onShowPopup={showPopup}
         unreadChatCount={unreadChatCount}
         onToggleProfile={handleToggleProfile}
+        onStartRegistration={(profile, title) => startRegistrationWithProfile(profile, title)}
+        onOpenForm={(context) => setInteractiveModalContext(context)}
+        onOpenOnlineProviders={handleOpenOnlineProviders}
+        onViewMyProfile={() => setIsProfileOpen(true)}
       />;
       break;
     }
@@ -2308,6 +2316,7 @@ const App: React.FC = () => {
                 onInstallPWA={handleInstallPWA}
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={setIsDarkMode}
+                onOpenForm={(context) => setInteractiveModalContext(context)}
                 onNavigate={(view) => {
                   setBlockedProfileOpen(false);
                   if (view === 'emergency_form') {
@@ -2519,6 +2528,7 @@ const App: React.FC = () => {
                 onInstallPWA={handleInstallPWA}
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={setIsDarkMode}
+                onOpenForm={(context) => setInteractiveModalContext(context)}
                 onNavigate={(view) => {
                   setBlockedProfileOpen(false);
                   if (view === 'emergency_form') {
@@ -2712,6 +2722,7 @@ const App: React.FC = () => {
                       onInstallPWA={handleInstallPWA}
                       isDarkMode={isDarkMode}
                       onToggleDarkMode={setIsDarkMode}
+                      onOpenForm={(context) => setInteractiveModalContext(context)}
                       onNavigate={(view) => {
                         setMenuView(view);
                         setIsProfileOpen(false);

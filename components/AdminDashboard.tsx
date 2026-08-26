@@ -180,6 +180,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>([]);
   const [sendingCustomNotif, setSendingCustomNotif] = useState(false);
   const [selectedTrackingWorker, setSelectedTrackingWorker] = useState<any | null>(null);
+  const [adminLocation, setAdminLocation] = useState<{ lat: number; lng: number }>({ lat: 5.359952, lng: -4.008256 });
   const [notifButtonRecherche, setNotifButtonRecherche] = useState(false);
   const [notifButtonSimpleDemande, setNotifButtonSimpleDemande] = useState(false);
   const [notifButtonQrCode, setNotifButtonQrCode] = useState(false);
@@ -299,10 +300,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       setData(prev => ({ ...prev, appartements_dispo: snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) }));
     });
 
-    // 7. Suivi GPS Travailleurs en direct (Google Maps / Firebase)
+    // Admin Geolocation
+    if (typeof window !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setAdminLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        },
+        () => {},
+        { timeout: 10000 }
+      );
+    }
+
+    // 7. Géolocalisation & Suivi GPS Travailleurs en direct (Firebase WorkerLiveLocations)
+    const unsubWorkerLiveLocations = onSnapshot(collection(db, 'WorkerLiveLocations'), (snap) => {
+      const liveList = snap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          name: d.workerName || d.name || 'Travailleur',
+          phone: d.workerPhone || d.phone || doc.id,
+          city: d.city || 'Côte d\'Ivoire',
+          category: d.category || 'Professionnel',
+          isLiveTracking: d.isLiveTracking ?? true,
+          latitude: d.lat ?? d.latitude ?? 5.359952,
+          longitude: d.lng ?? d.longitude ?? -4.008256,
+          speed: d.speed || 0,
+          heading: d.heading || 0,
+          accuracy: d.accuracy || 10,
+          pathHistory: d.pathHistory || [],
+          photoUrl: d.profileImageUrl || d.photoUrl,
+          lastUpdated: d.lastUpdated || Date.now()
+        };
+      });
+      setData(prev => ({ ...prev, trackedWorkers: liveList }));
+    });
+
     const unsubWorkerLocations = onSnapshot(collection(db, 'WorkerLocations'), (snap) => {
       const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setData(prev => ({ ...prev, trackedWorkers: list }));
+      setData(prev => {
+        // Merge without overwriting WorkerLiveLocations
+        const existing = [...prev.trackedWorkers];
+        list.forEach(item => {
+          const sId = (item.id || item.phone || '').replace(/\D/g, '');
+          if (!existing.some(e => (e.id || e.phone || '').replace(/\D/g, '') === sId)) {
+            existing.push(item);
+          }
+        });
+        return { ...prev, trackedWorkers: existing };
+      });
     });
 
     setLoading(false);
@@ -321,6 +366,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       unsubDisponible();
       unsubEquipementsDispo();
       unsubAppartementsDispo();
+      unsubWorkerLiveLocations();
       unsubWorkerLocations();
     };
   }, []);
@@ -514,6 +560,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           isLiveTracking: false,
           latitude: reg.latitude || 5.359952,
           longitude: reg.longitude || -4.008256,
+          speed: 0,
+          heading: 0,
+          pathHistory: [],
           lastUpdated: reg.timestamp ? (reg.timestamp.toDate ? reg.timestamp.toDate().getTime() : Date.now()) : Date.now()
         });
       }
@@ -521,6 +570,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
 
     const activeLiveCount = activeBroadcasts.filter(w => w.isLiveTracking && (Date.now() - (w.lastUpdated || 0) < 300000)).length;
     const selected = selectedTrackingWorker || (allWorkersList.length > 0 ? allWorkersList[0] : null);
+
+    const selectedLat = selected ? (selected.latitude || selected.lat || 5.359952) : 5.359952;
+    const selectedLng = selected ? (selected.longitude || selected.lng || -4.008256) : -4.008256;
+    const selectedDistanceKm = mapsService.calculateDistanceKm(adminLocation.lat, adminLocation.lng, selectedLat, selectedLng);
+    const selectedFormattedDistance = mapsService.formatDistance(selectedDistanceKm);
 
     return (
       <div className="space-y-6 animate-in fade-in duration-300">
@@ -532,14 +586,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-black uppercase tracking-wider text-white">Suivi GPS & Navigation en Direct</h2>
+                <h2 className="text-base font-black uppercase tracking-wider text-white">Géolocalisation & Suivi en Direct</h2>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  Google Cloud Platform • Actif
+                  Position Réelle • Actif
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-bold mt-0.5">
-                Localisation en temps réel, Navigation SDK et validation des adresses synchronisées avec Firebase
+                Localisation en temps réel, calcul de distance et parcours des prestataires connectés
               </p>
             </div>
           </div>
@@ -549,7 +603,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
               <span className="text-xl font-black text-emerald-400">{activeLiveCount}</span>
             </div>
             <div className="px-4 py-2 bg-white/10 rounded-2xl border border-white/10 text-center">
-              <span className="text-[9px] font-black text-slate-300 uppercase block tracking-widest">Total Enregistrés</span>
+              <span className="text-[9px] font-black text-slate-300 uppercase block tracking-widest">Total Prestataires</span>
               <span className="text-xl font-black text-white">{allWorkersList.length}</span>
             </div>
           </div>
@@ -562,7 +616,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-slate-800 mb-3">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
                 <HardHat className="w-4 h-4 text-orange-500" />
-                Liste des Travailleurs ({allWorkersList.length})
+                Prestataires Géolocalisés ({allWorkersList.length})
               </h3>
             </div>
 
@@ -570,12 +624,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
               {allWorkersList.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 text-gray-400">
                   <HardHat size={32} className="mb-2 opacity-40" />
-                  <p className="text-xs font-bold uppercase">Aucun travailleur répertorié</p>
+                  <p className="text-xs font-bold uppercase">Aucun prestataire répertorié</p>
                 </div>
               ) : (
                 allWorkersList.map((worker, idx) => {
                   const isSelected = selected && (selected.id === worker.id || selected.phone === worker.phone);
                   const isLive = worker.isLiveTracking && (Date.now() - (worker.lastUpdated || 0) < 300000);
+                  const wLat = worker.latitude || worker.lat || 5.359952;
+                  const wLng = worker.longitude || worker.lng || -4.008256;
+                  const distKm = mapsService.calculateDistanceKm(adminLocation.lat, adminLocation.lng, wLat, wLng);
+                  const distFormatted = mapsService.formatDistance(distKm);
                   
                   return (
                     <div
@@ -599,10 +657,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                           </div>
                           <div className="min-w-0">
                             <p className="text-xs font-black text-slate-900 dark:text-white uppercase truncate">
-                              {worker.name || 'Travailleur'}
+                              {worker.name || 'Prestataire'}
                             </p>
                             <p className="text-[10px] font-bold text-gray-500 dark:text-slate-400 uppercase truncate">
                               {worker.category || worker.job || 'Professionnel'} • {worker.city || 'Côte d\'Ivoire'}
+                            </p>
+                            <p className="text-[9.5px] font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                              Distance : {distFormatted}
                             </p>
                           </div>
                         </div>
@@ -613,7 +674,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300'
                               : 'bg-gray-200 text-gray-600 dark:bg-slate-700 dark:text-gray-400'
                           }`}>
-                            {isLive ? 'EN DIRECT' : 'REPOS'}
+                            {isLive ? 'EN DIRECT' : 'HORS LIGNE'}
                           </span>
                           {worker.phone && (
                             <button
@@ -638,23 +699,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           <div className="lg:col-span-8 bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col h-[600px]">
             {selected ? (
               <div className="h-full flex flex-col">
-                <div className="p-4 bg-gray-50/80 dark:bg-slate-800/80 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                <div className="p-4 bg-gray-50/80 dark:bg-slate-800/80 border-b border-gray-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-emerald-500 animate-ping" />
                     <div>
                       <h4 className="text-xs font-black uppercase text-slate-900 dark:text-white tracking-wider">
-                        {selected.name || 'Travailleur'} — Suivi satellite
+                        {selected.name || 'Prestataire'} — Géolocalisation en Direct
                       </h4>
-                      <p className="text-[10px] text-gray-500 font-bold uppercase">
-                        {selected.city || 'Côte d\'Ivoire'} • Tél: +225 {selected.phone || 'Non renseigné'}
-                      </p>
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-bold uppercase mt-0.5">
+                        <span>{selected.city || 'Côte d\'Ivoire'}</span>
+                        <span>•</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-black">Distance : {selectedFormattedDistance}</span>
+                        {selected.speed && selected.speed > 0 ? (
+                          <>
+                            <span>•</span>
+                            <span className="text-emerald-600 font-black">Vitesse : {Math.round(selected.speed * 3.6)} km/h</span>
+                          </>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                   
                   {selected.phone && (
                     <button
                       onClick={(e) => handleWhatsAppClick(selected.phone, e)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-[10px] uppercase shadow-md active:scale-95 transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-black text-[10px] uppercase shadow-md active:scale-95 transition-all cursor-pointer"
                     >
                       <WhatsAppIcon size={12} />
                       <span>WhatsApp</span>
@@ -665,23 +734,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                 <div className="flex-1 relative overflow-hidden">
                   <GoogleLiveTrackingMap 
                     workerId={selected.id || selected.phone}
-                    providerLat={selected.latitude || 5.359952}
-                    providerLng={selected.longitude || -4.008256}
+                    providerLat={selected.latitude || selected.lat || 5.359952}
+                    providerLng={selected.longitude || selected.lng || -4.008256}
                     providerName={selected.name}
                     providerCity={selected.city}
                     providerPhone={selected.phone}
                     providerCategory={selected.category || selected.job}
                     providerAvatar={selected.imageLink || selected.photoUrl}
-                    userLat={5.359952}
-                    userLng={-4.008256}
-                    userName="Siège FILANT°225"
+                    userLat={adminLocation.lat}
+                    userLng={adminLocation.lng}
+                    userName="Admin (Votre position)"
+                    pathHistory={selected.pathHistory}
                   />
                 </div>
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center p-8 text-gray-400">
                 <MapPin size={48} className="mb-3 opacity-30 text-indigo-500" />
-                <p className="text-sm font-bold uppercase">Sélectionnez un travailleur pour afficher sa localisation en direct</p>
+                <p className="text-sm font-bold uppercase">Sélectionnez un prestataire pour afficher sa localisation et son parcours</p>
               </div>
             )}
           </div>
@@ -1456,7 +1526,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
 
   const menuItems: { id: AdminTab, label: string, icon: any }[] = [
     { id: 'overview', label: 'Vue d\'ensemble', icon: LayoutDashboard },
-    { id: 'tracking', label: 'Suivi GPS Travailleurs', icon: Navigation },
+    { id: 'tracking', label: 'Géolocalisation', icon: Navigation },
     { id: 'connections', label: 'Connexions', icon: BarChart3 },
     { id: 'inscriptions', label: 'Inscriptions', icon: Briefcase },
     { id: 'wallets', label: 'Compte des utilisateurs', icon: Users },

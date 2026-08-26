@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { databaseService } from '../services/databaseService';
 import { Worker, User as UserType } from '../types';
 import EmbeddedForm from './EmbeddedForm';
-import { User, UserPlus, Headphones, Users, X } from 'lucide-react';
+import { User, UserPlus, Headphones, Users, X, Heart } from 'lucide-react';
 import { getFormImage } from './common/formDefinitions';
 import { db } from '../firebase';
 import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
@@ -342,6 +342,30 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
   // Use the full name as provided in the data
   const displayName = worker.name;
 
+  // Favorite status
+  const [isFavorite, setIsFavorite] = useState<boolean>(() => 
+    databaseService.isFavoriteWorker(user?.phone || '', worker.id || worker.name)
+  );
+
+  useEffect(() => {
+    const checkFav = () => {
+      setIsFavorite(databaseService.isFavoriteWorker(user?.phone || '', worker.id || worker.name));
+    };
+    checkFav();
+    window.addEventListener('filant-fav-workers-updated', checkFav);
+    return () => window.removeEventListener('filant-fav-workers-updated', checkFav);
+  }, [user?.phone, worker.id, worker.name]);
+
+  const handleToggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user?.phone) {
+      alert("Veuillez vous connecter avec votre numéro de téléphone pour enregistrer des profils en favoris.");
+      return;
+    }
+    const newState = await databaseService.toggleFavoriteWorker(user.phone, worker);
+    setIsFavorite(newState);
+  };
+
   const handleExigeClick = () => {
       const url = workerTallyLinks[worker.name] || 'https://tally.so/r/obEROM';
       onScheduleService(url, displayName);
@@ -462,10 +486,27 @@ const WorkerCard: React.FC<WorkerCardProps> = ({
         </button>
       </div>
       
-      {/* Decorative Status Dot */}
-      <div className="absolute top-4 right-4 flex items-center gap-1.5">
+      {/* Top right status and heart favorite button */}
+      <div className="absolute top-3.5 right-3.5 flex items-center gap-2">
+        <div className="flex items-center gap-1.5 bg-slate-50/90 py-1 px-2 rounded-full border border-slate-150">
           <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">Disponible</span>
           <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,1)]"></div>
+        </div>
+        <button
+          type="button"
+          onClick={handleToggleFavorite}
+          className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer shadow-sm ${
+            isFavorite 
+              ? 'bg-rose-50 hover:bg-rose-100 text-rose-500 border border-rose-200' 
+              : 'bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-500 border border-slate-200'
+          }`}
+          title={isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+          aria-label={isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+        >
+          <Heart 
+            className={`w-4 h-4 transition-all duration-200 ${isFavorite ? 'fill-rose-500 text-rose-500 scale-110' : 'text-slate-400'}`} 
+          />
+        </button>
       </div>
     </div>
   );

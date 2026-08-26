@@ -10,6 +10,7 @@ interface LeafletMapProps {
   providerName?: string;
   providerCity?: string;
   isSearching?: boolean;
+  pathHistory?: { lat: number; lng: number; timestamp: number }[];
 }
 
 // Global script/css loading utility to ensure single dynamic import of Leaflet
@@ -60,7 +61,8 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   providerLng,
   providerName = 'Prestataire',
   providerCity,
-  isSearching = false
+  isSearching = false,
+  pathHistory
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -70,6 +72,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const userMarkerRef = useRef<any>(null);
   const providerMarkerRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
+  const trailPolylineRef = useRef<any>(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -151,6 +154,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     if (userMarkerRef.current) userMarkerRef.current.remove();
     if (providerMarkerRef.current) providerMarkerRef.current.remove();
     if (polylineRef.current) polylineRef.current.remove();
+    if (trailPolylineRef.current) trailPolylineRef.current.remove();
 
     const userLatLng = [userLat, userLng] as [number, number];
 
@@ -202,7 +206,19 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         .addTo(map)
         .bindPopup(`<div class="p-1 text-xs font-sans text-gray-700"><strong>${providerName}</strong><br/>${providerCity || 'Côte d’Ivoire'}</div>`);
 
-      // 3. Create dashed GPS trajectory route
+      // 3. Render moving trajectory breadcrumbs if available
+      if (pathHistory && pathHistory.length > 1) {
+        const trailPoints = pathHistory.map(p => [p.lat, p.lng] as [number, number]);
+        trailPolylineRef.current = L.polyline(trailPoints, {
+          color: '#10b981',
+          weight: 4.5,
+          opacity: 0.9,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+      }
+
+      // 4. Create dashed GPS direct trajectory route
       polylineRef.current = L.polyline([userLatLng, providerLatLng], {
         color: '#f97316',
         weight: 3.5,
@@ -212,14 +228,18 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         interactive: false
       }).addTo(map);
 
-      // Auto-fit bounds
-      const bounds = L.latLngBounds([userLatLng, providerLatLng]);
+      // Auto-fit bounds including pathHistory
+      const pointsToBounds: [number, number][] = [userLatLng, providerLatLng];
+      if (pathHistory && pathHistory.length > 0) {
+        pathHistory.forEach(p => pointsToBounds.push([p.lat, p.lng]));
+      }
+      const bounds = L.latLngBounds(pointsToBounds);
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
     } else {
       // If no provider selected, center view closely on user location
       map.setView(userLatLng, 11);
     }
-  }, [userLat, userLng, providerLat, providerLng, mapLoaded, providerName, providerCity]);
+  }, [userLat, userLng, providerLat, providerLng, mapLoaded, providerName, providerCity, pathHistory]);
 
   // Custom Zoom Handlers
   const handleZoomIn = () => {

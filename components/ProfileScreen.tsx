@@ -1,11 +1,13 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { User, Tab } from '../types';
+import { User, Tab, FavoriteWorker } from '../types';
+import { Heart, Phone, ExternalLink, Trash2, User as UserIcon } from 'lucide-react';
 import ScannerOverlay, { extractQRInfo } from './ScannerOverlay';
 import { databaseService, SavedContact } from '../services/databaseService';
 import { imageService } from '../services/imageService';
 import { mapsService } from '../services/mapsService';
-import { getQuestionsForType, generateWhatsAppMessage } from './common/formDefinitions';
+import { getQuestionsForType, generateWhatsAppMessage, getFormImage } from './common/formDefinitions';
+import { getSynchronizedWorkerImage } from './WorkerListScreen';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
 import { ImageCropperModal } from './common/ImageCropperModal';
 
@@ -21,6 +23,7 @@ interface ProfileScreenProps {
   isDarkMode: boolean;
   onToggleDarkMode: (value: boolean) => void;
   onNavigate?: (view: any) => void;
+  onOpenForm?: (context: { formType: any; title: string; imageUrl?: string; description?: string }) => void;
 }
 
 // --- CONSTANTS ---
@@ -188,15 +191,18 @@ const ContactListView: React.FC<{ contacts: SavedContact[], onDelete: (id: strin
 };
 
 // --- PROFILE SCREEN COMPONENT ---
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, setActiveTab, onShowPopup, deferredPrompt, onInstallPWA, isDarkMode, onToggleDarkMode, onNavigate }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, setActiveTab, onShowPopup, deferredPrompt, onInstallPWA, isDarkMode, onToggleDarkMode, onNavigate, onOpenForm }) => {
   if (!user) return null;
 
   const panelRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [view, setView] = useState<'main' | 'contacts' | 'history'>('main');
+  const [view, setView] = useState<'main' | 'contacts' | 'history' | 'favorites'>('main');
   const [contacts, setContacts] = useState<SavedContact[]>([]);
+  const [favoriteWorkers, setFavoriteWorkers] = useState<FavoriteWorker[]>(() => {
+    return user?.phone ? databaseService.getFavoriteWorkers(user.phone) : [];
+  });
   const [showScanner, setShowScanner] = useState(false);
   const [showIdModal, setShowIdModal] = useState(false);
 
@@ -249,45 +255,92 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       return stored || null;
   });
 
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<'granted' | 'denied' | 'prompt'>(() => {
+    return (localStorage.getItem('filant_location_permission_status') as any) || 'prompt';
+  });
+
   const [isBroadcastingLocation, setIsBroadcastingLocation] = useState<boolean>(() => {
     return localStorage.getItem(`filant_live_tracking_${user?.phone}`) === 'true';
   });
 
-  const toggleLocationBroadcast = () => {
-    if (!user?.phone) return;
-    if (isBroadcastingLocation) {
-      mapsService.stopLiveBroadcasting(user.phone);
-      setIsBroadcastingLocation(false);
-      localStorage.setItem(`filant_live_tracking_${user.phone}`, 'false');
-      onShowPopup("Diffusion de votre position GPS en direct arrêtée.", 'alert');
-    } else {
-      const started = mapsService.startLiveBroadcasting(
-        {
-          id: user.phone,
-          name: user.name || 'Travailleur FILANT°225',
-          phone: user.phone,
-          category: 'Travailleur'
-        },
-        () => {},
-        (errMsg) => onShowPopup(errMsg, 'alert')
-      );
-      if (started) {
-        setIsBroadcastingLocation(true);
-        localStorage.setItem(`filant_live_tracking_${user.phone}`, 'true');
-        onShowPopup("Position GPS en direct activée ! Vos clients et l'administration peuvent désormais suivre votre localisation en temps réel sur la carte.", 'alert');
-      }
+  // Request location permission & start live tracking automatically
+  const requestLocationPermission = useCallback(() => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setLocationPermissionStatus('denied');
+      onShowPopup("La géolocalisation n'est pas supportée sur cet appareil.", 'alert');
+      return;
     }
-  };
+
+    if (!user?.phone) return;
+
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setLocationPermissionStatus('granted');
+        localStorage.setItem('filant_location_permission_status', 'granted');
+        localStorage.setItem(`filant_live_tracking_${user.phone}`, 'true');
+        setIsBroadcastingLocation(true);
+
+        mapsService.startLiveBroadcasting(
+          {
+            id: user.phone,
+            name: user.name || 'Prestataire FILANT°225',
+            phone: user.phone,
+            category: user.activity || 'Travailleur',
+            photoUrl: profileImage || undefined
+          },
+          () => {
+            setIsBroadcastingLocation(true);
+            setLocationPermissionStatus('granted');
+          },
+          (errMsg, code) => {
+            if (code === 1) {
+              setLocationPermissionStatus('denied');
+              setIsBroadcastingLocation(false);
+              localStorage.setItem('filant_location_permission_status', 'denied');
+            }
+            onShowPopup(errMsg, 'alert');
+          }
+        );
+      },
+      (err) => {
+        if (err.code === 1) {
+          setLocationPermissionStatus('denied');
+          setIsBroadcastingLocation(false);
+          localStorage.setItem('filant_location_permission_status', 'denied');
+          onShowPopup("Autorisation de localisation désactivée sur votre appareil ou navigateur. Veuillez l'activer dans vos paramètres.", 'alert');
+        } else {
+          onShowPopup("Signal GPS indisponible. Veuillez vérifier que le GPS de votre appareil est allumé.", 'alert');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }, [user, profileImage, onShowPopup]);
+
+  // Request permission automatically on first connection if not yet prompted or already granted
+  useEffect(() => {
+    if (!user?.phone) return;
+    const storedStatus = localStorage.getItem('filant_location_permission_status');
+    const storedTracking = localStorage.getItem(`filant_live_tracking_${user.phone}`);
+
+    if (storedStatus === 'granted' || storedTracking === 'true' || !storedStatus) {
+      requestLocationPermission();
+    }
+  }, [user?.phone, requestLocationPermission]);
 
   useEffect(() => {
     let unsubWallet = () => {};
     let unsubWalletTxs = () => {};
     let unsubContacts = () => {};
     let unsubPending = () => {};
+    let unsubFavWorkers = () => {};
 
     if (user?.phone) {
       unsubContacts = databaseService.subscribeToScannedContacts(user.phone, (newContacts) => {
         setContacts(newContacts);
+      });
+
+      unsubFavWorkers = databaseService.subscribeToFavoriteWorkers(user.phone, (favs) => {
+        setFavoriteWorkers(favs);
       });
 
       unsubWallet = databaseService.subscribeToWallet(user.phone, (walletData) => {
@@ -312,6 +365,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       unsubWallet();
       unsubWalletTxs();
       unsubContacts();
+      unsubFavWorkers();
       unsubPending();
     };
   }, [user?.phone]);
@@ -553,6 +607,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
             <div className="bg-white rounded-3xl overflow-hidden mx-4 shadow-sm border border-gray-100">
                 <ProfileRow icon={<PayeIcon className="w-10 h-10 text-blue-600" />} title="Modes de paiement" subtitle="ESPÈCES / WAVE" onClick={() => { setActiveTab(Tab.Payment); handleClose(); }} rightElement={<div className="bg-green-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5"><span className="text-[10px] font-black text-green-700 uppercase tracking-tighter">Actif</span><ChevronRight className="h-3 w-3 text-green-700" /></div>} />
                 <div className="h-px bg-gray-50 mx-4"></div>
+                <ProfileRow 
+                  icon={
+                    <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                      <Heart className="w-5 h-5 fill-rose-500 text-rose-500" />
+                    </div>
+                  } 
+                  title="Mes Favoris" 
+                  subtitle={favoriteWorkers.length > 0 ? `${favoriteWorkers.length} profil${favoriteWorkers.length > 1 ? 's' : ''} enregistré${favoriteWorkers.length > 1 ? 's' : ''}` : "Profils sauvegardés"} 
+                  onClick={() => setView('favorites')} 
+                  rightElement={
+                    favoriteWorkers.length > 0 ? (
+                      <div className="bg-rose-50 px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-rose-100">
+                        <span className="text-[10px] font-black text-rose-600 font-mono">{favoriteWorkers.length}</span>
+                        <ChevronRight className="h-3 w-3 text-rose-600" />
+                      </div>
+                    ) : (
+                      <ChevronRight className="h-5 w-5 text-gray-400" />
+                    )
+                  } 
+                />
+                <div className="h-px bg-gray-50 mx-4"></div>
                 <ProfileRow icon={<ContactIcon className="w-10 h-10 text-orange-500" />} title="Assistance QR" subtitle="Contacts intégrés" onClick={() => setView('contacts')} />
                 <div className="h-px bg-gray-50 mx-4"></div>
                 <ProfileRow 
@@ -564,20 +639,30 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
                       </svg>
                     </div>
                   } 
-                  title="Suivi GPS Travailleur en direct" 
-                  subtitle={isBroadcastingLocation ? "Position en direct activée • Visible sur la carte" : "Partager ma localisation en temps réel"} 
-                  onClick={toggleLocationBroadcast} 
+                  title="Suivi GPS / Géolocalisation" 
+                  subtitle={
+                    isBroadcastingLocation || locationPermissionStatus === 'granted'
+                      ? "Position en direct activée • Visible sur la carte" 
+                      : "Autorisation de localisation désactivée sur l'appareil"
+                  } 
+                  onClick={locationPermissionStatus === 'denied' || !isBroadcastingLocation ? requestLocationPermission : undefined} 
                   rightElement={
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); toggleLocationBroadcast(); }}
-                      className={`px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-all text-[9px] font-black uppercase ${
-                        isBroadcastingLocation ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full ${isBroadcastingLocation ? 'bg-white animate-ping' : 'bg-slate-400'}`} />
-                      <span>{isBroadcastingLocation ? 'EN DIRECT' : 'ACTIVER'}</span>
-                    </button>
+                    isBroadcastingLocation || locationPermissionStatus === 'granted' ? (
+                      <div className="bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-emerald-200 dark:border-emerald-800">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></div>
+                        <span className="text-[9px] font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-tight">ACTIVÉ • EN DIRECT</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); requestLocationPermission(); }}
+                        className="bg-amber-500 hover:bg-amber-600 active:scale-95 px-3 py-1.5 rounded-full flex items-center gap-1.5 text-white shadow-sm transition-all cursor-pointer"
+                        title="Réactiver la géolocalisation"
+                      >
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                        <span className="text-[9px] font-black uppercase tracking-tight">RÉACTIVER</span>
+                      </button>
+                    )
                   } 
                 />
             </div>
@@ -965,12 +1050,156 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
     </div>
   );
 
+  const renderFavoritesView = () => (
+    <div className="bg-[#F3F3F3] h-full flex flex-col animate-in slide-in-from-right duration-200">
+      <header className="p-4 flex items-center bg-white shadow-sm border-b border-gray-100">
+        <button 
+          onClick={() => setView('main')} 
+          className="p-2 -ml-2 active:scale-90 transition-transform text-black cursor-pointer"
+          title="Retour au profil"
+        >
+          <BackIcon className="w-7 h-7" />
+        </button>
+        <div className="flex-1 text-center">
+          <h1 className="font-black uppercase text-sm tracking-tight text-slate-900">Mes Profils Favoris</h1>
+          <p className="text-[9px] font-bold text-rose-600 uppercase tracking-wider font-mono">
+            {favoriteWorkers.length} profil{favoriteWorkers.length > 1 ? 's' : ''} enregistré{favoriteWorkers.length > 1 ? 's' : ''}
+          </p>
+        </div>
+        {favoriteWorkers.length > 0 ? (
+          <button 
+            onClick={() => {
+              onShowPopup("Voulez-vous vider tous vos travailleurs favoris ?", 'confirm', (close) => {
+                favoriteWorkers.forEach(w => databaseService.removeFavoriteWorker(user.phone, w.id || w.name));
+                close();
+              });
+            }} 
+            className="p-2 text-rose-500 hover:bg-rose-50 rounded-full transition-colors active:scale-90 cursor-pointer"
+            title="Tout vider"
+          >
+            <TrashIcon className="w-5 h-5" />
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
+      </header>
+
+      <div className="flex-1 p-4 overflow-y-auto space-y-3">
+        {favoriteWorkers.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 px-4 text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-rose-50 border-2 border-rose-100 flex items-center justify-center text-rose-500 shadow-sm animate-pulse">
+              <Heart className="w-8 h-8 fill-rose-500 text-rose-500" />
+            </div>
+            <div className="space-y-1.5 max-w-[240px]">
+              <h3 className="font-black text-slate-800 uppercase text-xs tracking-tight">Aucun favori enregistré</h3>
+              <p className="text-[11px] font-medium text-slate-500 leading-relaxed">
+                Appuyez sur l'icône cœur <Heart className="w-3 h-3 inline fill-rose-500 text-rose-500 mx-0.5" /> sur la fiche d'un travailleur pour le retrouver rapidement ici.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                handleClose();
+                if (onNavigate) {
+                  onNavigate('travailleurs');
+                }
+              }}
+              className="mt-2 py-2.5 px-5 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl shadow-md shadow-orange-500/20 transition-all cursor-pointer"
+            >
+              Explorer les travailleurs
+            </button>
+          </div>
+        ) : (
+          favoriteWorkers.map((fav) => (
+            <div 
+              key={fav.id || fav.name}
+              className="bg-white rounded-2xl p-3.5 shadow-sm border border-slate-100 flex flex-col gap-3 relative overflow-hidden animate-in fade-in duration-200"
+            >
+              <div className="flex gap-3 items-start">
+                <div className="w-14 h-14 rounded-2xl border border-orange-400 overflow-hidden flex-shrink-0 relative bg-slate-50 flex items-center justify-center shadow-inner">
+                  {fav.profileImageUrl ? (
+                    <img 
+                      src={fav.profileImageUrl} 
+                      alt={fav.name} 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer" 
+                    />
+                  ) : (
+                    <UserIcon className="w-7 h-7 text-slate-400" />
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0 pr-8">
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="font-black text-slate-900 text-xs uppercase tracking-tight truncate">
+                      {fav.name}
+                    </h3>
+                  </div>
+                  <span className="inline-block text-[9px] font-extrabold text-orange-600 uppercase tracking-tight bg-orange-50 px-1.5 py-0.5 rounded-md mt-0.5">
+                    {fav.category || "Travailleur"}
+                  </span>
+                  {fav.description && (
+                    <p className="text-[10px] text-slate-500 line-clamp-2 mt-1 leading-snug font-medium">
+                      {fav.description}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => databaseService.removeFavoriteWorker(user.phone, fav.id || fav.name)}
+                  className="absolute top-3 right-3 p-1.5 text-rose-500 hover:bg-rose-50 rounded-full transition-colors active:scale-90 cursor-pointer"
+                  title="Retirer des favoris"
+                >
+                  <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
+                </button>
+              </div>
+
+              {/* Single "Demande" Action Button */}
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const resolvedImg = fav.profileImageUrl || getSynchronizedWorkerImage(fav.name) || getFormImage(fav.name) || '';
+                    handleClose();
+                    if (onOpenForm) {
+                      onOpenForm({
+                        formType: fav.formType || 'worker',
+                        title: fav.name,
+                        imageUrl: resolvedImg,
+                        description: fav.description
+                      });
+                    } else {
+                      window.dispatchEvent(new CustomEvent('trigger-embedded-form', {
+                        detail: {
+                          formType: fav.formType || 'worker',
+                          title: fav.name,
+                          imageUrl: resolvedImg,
+                          description: fav.description
+                        }
+                      }));
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all shadow-md shadow-orange-500/20 cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  <span>Demande</span>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="absolute inset-0 z-[100] flex justify-end" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
         <div ref={overlayRef} className="absolute inset-0 bg-black/40 transition-opacity duration-300 opacity-0" onClick={handleClose}></div>
         <div ref={panelRef} className="relative z-10 w-full max-w-[320px] bg-[#F3F3F3] flex flex-col transition-transform duration-300 translate-x-full overflow-hidden">
             <main className="flex-1 overflow-y-auto scrollbar-hide">
                 {view === 'main' && renderMainView()}
+                {view === 'favorites' && renderFavoritesView()}
                 {view === 'contacts' && (
                     <div className="bg-[#F3F3F3] h-full flex flex-col">
                         <header className="p-4 flex items-center bg-white shadow-sm border-b border-gray-100"><button onClick={() => setView('main')} className="p-2 -ml-2 active:scale-90 transition-transform"><BackIcon className="w-7 h-7 text-black"/></button><h1 className="flex-1 text-center font-black uppercase text-base tracking-tight mr-10">Assistance QR</h1><button onClick={handleClearContacts} className="p-2 text-red-500"><TrashIcon className="w-5 h-5"/></button></header>

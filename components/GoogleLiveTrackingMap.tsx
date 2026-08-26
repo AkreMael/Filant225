@@ -18,6 +18,7 @@ interface GoogleLiveTrackingMapProps {
   providerCategory?: string;
   isSearching?: boolean;
   onOpenNavigation?: () => void;
+  pathHistory?: { lat: number; lng: number; timestamp: number }[];
 }
 
 // Script loader helper for Google Maps JS API
@@ -80,10 +81,12 @@ const GoogleLiveTrackingMap: React.FC<GoogleLiveTrackingMapProps> = ({
   const providerMarkerRef = useRef<any>(null);
   const directionsRendererRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
+  const trailPolylineRef = useRef<any>(null);
 
   // Effective provider coordinates (prefer live GPS stream from Firestore if available)
   const currentProviderLat = liveWorkerLoc?.lat ?? providerLat;
   const currentProviderLng = liveWorkerLoc?.lng ?? providerLng;
+  const effectivePathHistory = liveWorkerLoc?.pathHistory ?? pathHistory;
   const hasProviderCoords = currentProviderLat !== null && currentProviderLng !== null;
 
   // Real-time Firestore subscription to worker live location
@@ -218,13 +221,33 @@ const GoogleLiveTrackingMap: React.FC<GoogleLiveTrackingMapProps> = ({
         ]);
       }
 
+      // Draw real-time moving trail (breadcrumbs)
+      if (effectivePathHistory && effectivePathHistory.length > 1) {
+        const trailGoogleCoords = effectivePathHistory.map(p => ({ lat: p.lat, lng: p.lng }));
+        if (!trailPolylineRef.current) {
+          trailPolylineRef.current = new g.maps.Polyline({
+            path: trailGoogleCoords,
+            geodesic: true,
+            strokeColor: '#10b981',
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            map
+          });
+        } else {
+          trailPolylineRef.current.setPath(trailGoogleCoords);
+        }
+      }
+
       // Fit bounds
       const bounds = new g.maps.LatLngBounds();
       bounds.extend({ lat: userLat, lng: userLng });
       bounds.extend({ lat: currentProviderLat, lng: currentProviderLng });
+      if (effectivePathHistory && effectivePathHistory.length > 0) {
+        effectivePathHistory.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+      }
       map.fitBounds(bounds);
     }
-  }, [isScriptLoaded, scriptError, userLat, userLng, currentProviderLat, currentProviderLng, hasProviderCoords, mapType, isLiveActive]);
+  }, [isScriptLoaded, scriptError, userLat, userLng, currentProviderLat, currentProviderLng, hasProviderCoords, mapType, isLiveActive, effectivePathHistory]);
 
   // Open external Google Maps turn-by-turn navigation
   const handleOpenGoogleNavigation = () => {
@@ -250,6 +273,7 @@ const GoogleLiveTrackingMap: React.FC<GoogleLiveTrackingMapProps> = ({
           providerName={providerName}
           providerCity={providerCity}
           isSearching={isSearching}
+          pathHistory={effectivePathHistory}
         />
         {isLiveActive && (
           <div className="absolute top-4 left-4 z-[400] bg-emerald-600/90 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-lg animate-pulse backdrop-blur-sm">

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Tab, User } from '../types';
-import { History as LucideHistory, Calendar as LucideCalendar, Star as LucideStar, GraduationCap, Search, ArrowLeft, X, ChevronRight, Send, Eye, ShoppingBag, RefreshCw } from 'lucide-react';
+import { History as LucideHistory, Calendar as LucideCalendar, Star as LucideStar, GraduationCap, Search, ArrowLeft, X, ChevronRight, Send, Eye, ShoppingBag, RefreshCw, UserPlus, Headphones, Users } from 'lucide-react';
 import MenuBackground from './common/MenuBackground';
 import { databaseService, SavedContact } from '../services/databaseService';
 import ScannerOverlay, { extractQRInfo } from './ScannerOverlay';
@@ -13,7 +13,19 @@ import { getServiceItemImage } from './InterventionShopScreen';
 import { motion, AnimatePresence } from 'motion/react';
 import MenuSlideshow from './MenuSlideshow';
 import { db } from '../firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, limit } from 'firebase/firestore';
+import { 
+  matchInscriptionsForTitle, 
+  isUserRegistrationOnline, 
+  findUserOnlineProfile, 
+  AlreadyRegisteredModal, 
+  ProviderAvailabilityModal, 
+  getProviderName, 
+  getProviderMetier, 
+  getProviderCity, 
+  getProviderAmount 
+} from './common/OnlineStatusModal';
+import { getSynchronizedWorkerImage } from './WorkerListScreen';
 
 // --- SVG Icons ---
 const IconWrapper: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
@@ -1001,6 +1013,10 @@ interface HomeScreenProps {
   deferredPrompt: any;
   onInstallPWA: () => void;
   onToggleProfile?: () => void;
+  onStartRegistration?: (profile: 'Travailleur' | 'Propriétaire' | 'Agence' | 'Entreprise', title?: string) => void;
+  onOpenForm?: (context: { formType: any; title: string; imageUrl?: string; description?: string }) => void;
+  onOpenOnlineProviders?: () => void;
+  onViewMyProfile?: () => void;
 }
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ 
@@ -1017,7 +1033,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   pendingRequestsCount = 0,
   deferredPrompt,
   onInstallPWA,
-  onToggleProfile
+  onToggleProfile,
+  onStartRegistration,
+  onOpenForm,
+  onOpenOnlineProviders,
+  onViewMyProfile
 }) => {
   const isMainServiceOpen = true;
 
@@ -1027,6 +1047,104 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Real-time Inscriptions Listener for Provider Matching & Availability
+  const [inscriptionsList, setInscriptionsList] = useState<any[]>([]);
+  useEffect(() => {
+    const qInscriptions = query(collection(db, 'Inscriptions'), limit(300));
+    const unsubInsc = onSnapshot(qInscriptions, (snap) => {
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setInscriptionsList(list);
+    }, (err) => {
+      console.warn("Error listening to Inscriptions in HomeScreen:", err);
+    });
+    return () => unsubInsc();
+  }, []);
+
+  // Worker Carousel Modal & Availability States
+  const [selectedWorkerItem, setSelectedWorkerItem] = useState<any | null>(null);
+  const [isAlreadyRegisteredOpen, setIsAlreadyRegisteredOpen] = useState(false);
+  const [availabilityModalData, setAvailabilityModalData] = useState<{
+    isOpen: boolean;
+    title: string;
+    providers: any[];
+    onServiceClient: (selectedProvider?: any) => void;
+  }>({
+    isOpen: false,
+    title: '',
+    providers: [],
+    onServiceClient: () => {}
+  });
+
+  // Action handlers for scrolling worker titles modal
+  const handleWorkerItemInscription = (item: any) => {
+    const isOnline = isUserRegistrationOnline(user, inscriptionsList, inscriptionData);
+    if (isOnline) {
+      setSelectedWorkerItem(null);
+      setIsAlreadyRegisteredOpen(true);
+      return;
+    }
+    setSelectedWorkerItem(null);
+    if (onStartRegistration) {
+      onStartRegistration('Travailleur', item.title);
+    } else if (onRegisterDirectly) {
+      onRegisterDirectly('Travailleur');
+    } else {
+      onShowPopup("Veuillez remplir le formulaire d'inscription.", 'alert');
+    }
+  };
+
+  const handleWorkerItemServiceClient = (item: any) => {
+    setSelectedWorkerItem(null);
+    const imgUrl = getSynchronizedWorkerImage(item.title) || getServiceItemImage(item.title) || '';
+    if (onOpenForm) {
+      onOpenForm({
+        formType: item.formType || 'rapid_building_service',
+        title: item.title,
+        imageUrl: imgUrl,
+        description: item.description
+      });
+    } else {
+      onOpenBuildingService(item);
+    }
+  };
+
+  const handleWorkerItemContactPrestataire = (item: any) => {
+    setSelectedWorkerItem(null);
+    const matching = matchInscriptionsForTitle(item.title, inscriptionsList);
+    const imgUrl = getSynchronizedWorkerImage(item.title) || getServiceItemImage(item.title) || '';
+    setAvailabilityModalData({
+      isOpen: true,
+      title: item.title,
+      providers: matching,
+      onServiceClient: (selectedProvider?: any) => {
+        if (selectedProvider) {
+          const provName = getProviderName(selectedProvider);
+          const provMetier = getProviderMetier(selectedProvider, item.title);
+          const provCity = getProviderCity(selectedProvider);
+          const provAmount = getProviderAmount(selectedProvider);
+
+          const context = {
+            formType: 'rapid_building_service' as any,
+            title: `${item.title} (${provName})`,
+            imageUrl: selectedProvider.profileImageUrl || selectedProvider.imageLink || imgUrl,
+            description: `Demande de mise en relation adressée à : ${provName} - ${provMetier} (${provCity}) | Montant proposé : ${provAmount}`
+          };
+          if (onOpenForm) onOpenForm(context);
+          else onOpenBuildingService(context);
+        } else {
+          const context = {
+            formType: 'rapid_building_service' as any,
+            title: item.title,
+            imageUrl: imgUrl,
+            description: item.description
+          };
+          if (onOpenForm) onOpenForm(context);
+          else onOpenBuildingService(context);
+        }
+      }
+    });
+  };
   
   // --- CONVERSATIONAL ASSISTANT STATES ---
   const [isSearchSubmitted, setIsSearchSubmitted] = useState(false);
@@ -1895,7 +2013,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
                 </div>
 
                 {!isSearchSubmitted && (
-                    <BuildingCarousel onSelectItem={(item) => onOpenBuildingService(item)} />
+                    <BuildingCarousel onSelectItem={(item) => setSelectedWorkerItem(item)} />
                 )}
 
                 <button 
@@ -2087,6 +2205,144 @@ const HomeScreen: React.FC<HomeScreenProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* --- MODAL FOR SCROLLING WORKER TITLES WITH 3 ACTION BUTTONS --- */}
+      <AnimatePresence>
+        {selectedWorkerItem && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setSelectedWorkerItem(null);
+            }}
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="bg-white rounded-[2.5rem] p-5 sm:p-6 flex flex-col max-w-sm sm:max-w-md w-full relative overflow-hidden shadow-2xl border-2 border-orange-500"
+            >
+              {/* Top Bar: DISPONIBLE badge + Close button */}
+              <div className="flex items-center justify-between mb-3.5">
+                <div className="flex items-center gap-1.5 bg-slate-50/90 py-1 px-2.5 rounded-full border border-slate-200">
+                  <span className="text-[8px] sm:text-[9px] font-black text-gray-500 uppercase tracking-tighter">Disponible</span>
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,1)]"></div>
+                </div>
+
+                <button 
+                  type="button"
+                  onClick={() => setSelectedWorkerItem(null)}
+                  className="text-gray-400 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+                  title="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Main Info Row */}
+              <div className="flex gap-4 items-start">
+                {/* Large Rounded Photo */}
+                <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl border-2 border-orange-500 overflow-hidden flex-shrink-0 relative bg-gray-50 flex items-center justify-center shadow-inner">
+                  {(() => {
+                    const imgUrl = getSynchronizedWorkerImage(selectedWorkerItem.title) || getServiceItemImage(selectedWorkerItem.title);
+                    return imgUrl ? (
+                      <img 
+                        src={imgUrl} 
+                        alt={selectedWorkerItem.title} 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <UserCircleIcon className="w-14 h-14 text-slate-400" />
+                    );
+                  })()}
+                </div>
+
+                {/* Info Area */}
+                <div className="flex-1 flex flex-col justify-start min-w-0">
+                  <h3 className="font-black text-black text-lg sm:text-xl leading-tight mb-1.5 uppercase tracking-tight truncate">
+                    {selectedWorkerItem.title}
+                  </h3>
+                  <div className="flex items-center gap-1 mb-2">
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <LucideStar key={s} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    ))}
+                    <span className="text-[11px] font-bold text-gray-700 ml-1">4.8</span>
+                  </div>
+                  <p className="text-gray-600 text-[11px] sm:text-xs leading-relaxed font-medium line-clamp-3">
+                    {selectedWorkerItem.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* 3 Action Buttons (Exact duplicate of Travailleurs qualifiés) */}
+              <div className="flex flex-col gap-2.5 mt-5 pt-3.5 border-t border-gray-100">
+                <div className="flex gap-2">
+                  {/* Inscription */}
+                  <button
+                    type="button"
+                    onClick={() => handleWorkerItemInscription(selectedWorkerItem)}
+                    className="flex-1 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 border border-blue-200 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    title="Inscription"
+                  >
+                    <UserPlus className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Inscription</span>
+                  </button>
+
+                  {/* Service client */}
+                  <button
+                    type="button"
+                    onClick={() => handleWorkerItemServiceClient(selectedWorkerItem)}
+                    className="flex-1 py-2.5 px-3 bg-orange-500 hover:bg-orange-600 active:scale-95 text-white border border-orange-600 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-orange-500/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    title="Service client"
+                  >
+                    <Headphones className="w-4 h-4 text-white shrink-0" />
+                    <span>Service client</span>
+                  </button>
+                </div>
+
+                {/* Contacter un prestataire */}
+                <button
+                  type="button"
+                  onClick={() => handleWorkerItemContactPrestataire(selectedWorkerItem)}
+                  className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white border border-emerald-700 rounded-2xl font-extrabold text-[11px] sm:text-xs transition-all shadow-sm shadow-emerald-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  title="Contacter un prestataire"
+                >
+                  <Users className="w-4 h-4 text-white shrink-0" />
+                  <span>Contacter un prestataire</span>
+                </button>
+              </div>
+
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Already Registered Modal */}
+      <AlreadyRegisteredModal
+        isOpen={isAlreadyRegisteredOpen}
+        onClose={() => setIsAlreadyRegisteredOpen(false)}
+        userProfile={findUserOnlineProfile(user, inscriptionsList, inscriptionData)}
+        onViewProfile={() => {
+          if (onViewMyProfile) {
+            onViewMyProfile();
+          } else if (onOpenOnlineProviders) {
+            onOpenOnlineProviders();
+          }
+        }}
+      />
+
+      {/* Provider Availability Modal */}
+      <ProviderAvailabilityModal
+        isOpen={availabilityModalData.isOpen}
+        onClose={() => setAvailabilityModalData(prev => ({ ...prev, isOpen: false }))}
+        title={availabilityModalData.title}
+        providers={availabilityModalData.providers}
+        onOpenServiceClient={availabilityModalData.onServiceClient}
+      />
 
       <style>{`
         .text-outline-white {

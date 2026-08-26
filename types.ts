@@ -131,6 +131,7 @@ export interface WorkerLiveLocation {
   destinationLng?: number;
   destinationAddress?: string;
   isLiveTracking: boolean;
+  pathHistory?: { lat: number; lng: number; timestamp: number }[];
   lastUpdated: number;
   updatedAt?: any;
 }
