@@ -1,5 +1,5 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, Tab, FavoriteWorker } from '../types';
 import { Heart, Phone, ExternalLink, Trash2, User as UserIcon } from 'lucide-react';
 import ScannerOverlay, { extractQRInfo } from './ScannerOverlay';

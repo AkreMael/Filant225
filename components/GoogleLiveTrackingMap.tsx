@@ -66,7 +66,8 @@ const GoogleLiveTrackingMap: React.FC<GoogleLiveTrackingMapProps> = ({
   providerAvatar,
   providerCategory = 'Travailleur',
   isSearching = false,
-  onOpenNavigation
+  onOpenNavigation,
+  pathHistory
 }) => {
   const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap');
   const [liveWorkerLoc, setLiveWorkerLoc] = useState<WorkerLiveLocation | null>(null);

@@ -6,6 +6,7 @@ import { ref as rtdbRef, onValue } from 'firebase/database';
 import { User } from '../types';
 import { databaseService } from '../services/databaseService';
 import { imageService } from '../services/imageService';
+import { mapsService } from '../services/mapsService';
 import { 
   Users, 
   Briefcase, 
@@ -336,13 +337,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     });
 
     const unsubWorkerLocations = onSnapshot(collection(db, 'WorkerLocations'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const list: any[] = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       setData(prev => {
         // Merge without overwriting WorkerLiveLocations
         const existing = [...prev.trackedWorkers];
-        list.forEach(item => {
+        list.forEach((item: any) => {
           const sId = (item.id || item.phone || '').replace(/\D/g, '');
-          if (!existing.some(e => (e.id || e.phone || '').replace(/\D/g, '') === sId)) {
+          if (!existing.some(e => (e.id || (e as any).phone || '').replace(/\D/g, '') === sId)) {
             existing.push(item);
           }
         });
