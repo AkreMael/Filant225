@@ -81,20 +81,89 @@ define(['./workbox-5a5d9309'], (function (workbox) { 'use strict';
     "url": "registerSW.js",
     "revision": "1872c500de691dce40960bb85481de07"
   }, {
+    "url": "offline.html",
+    "revision": "18e896d3375118c2e391d2ec942e8d71"
+  }, {
     "url": "index.html",
-    "revision": "34bf5d5eb311933d86c56e007279e2ff"
+    "revision": "b5688744e2d4864d437440457882a17c"
   }, {
     "url": "firebase-messaging-sw.js",
-    "revision": "91d28c8af669bac7d461ed79b34d6ee0"
+    "revision": "3a5a44e2c304af9079c96c58c53d9aa4"
   }, {
-    "url": "assets/index-CWEKuNNe.js",
+    "url": "assets/vendor-motion-Cu7gqrnc.js",
     "revision": null
   }, {
-    "url": "icon.svg",
-    "revision": "4d5e451c417a012721cc2184b1766448"
+    "url": "assets/vendor-lucide-BuRcVQUv.js",
+    "revision": null
+  }, {
+    "url": "assets/vendor-firebase-B5hTcyTQ.js",
+    "revision": null
+  }, {
+    "url": "assets/vendor-CnNdDZAq.js",
+    "revision": null
+  }, {
+    "url": "assets/index--JliJrZZ.js",
+    "revision": null
+  }, {
+    "url": "favicon.ico",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-128x128-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-128x128.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-144x144-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-144x144.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-192x192-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-192x192.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-256x256-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-256x256.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-384x384-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-384x384.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-512x512-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-512x512.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-72x72-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-72x72.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-96x96-maskable.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "icons/icon-96x96.png",
+    "revision": "09d3dca10bd1b0dfd1dcea74fc4a4a79"
+  }, {
+    "url": "screenshots/screenshot-desktop.png",
+    "revision": "5df4aad74413f8ec162cc1b05b97b98f"
+  }, {
+    "url": "screenshots/screenshot-mobile.png",
+    "revision": "1a93377aea6fad7c2cc141ac4fbc7820"
   }, {
     "url": "manifest.webmanifest",
-    "revision": "c3cddf95710eab14fd38cd5891d7ac3d"
+    "revision": "bee9377b13d49235fc07a5a0e9af260f"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html")));

@@ -1,5 +1,8 @@
 {
 	"appId": "com.filant225.app",
-	"appName": "FILANT 225",
-	"webDir": "dist"
+	"appName": "FILANT°225",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
 }
