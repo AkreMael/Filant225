@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { db, rtdb } from '../firebase';
 import { collection, onSnapshot, query, orderBy, limit, addDoc, serverTimestamp, updateDoc, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { ref as rtdbRef, onValue } from 'firebase/database';
-import { User } from '../types';
+import { User, IdentityDocument } from '../types';
 import { databaseService } from '../services/databaseService';
 import { imageService } from '../services/imageService';
 import { mapsService } from '../services/mapsService';
+import { identityService } from '../services/identityService';
 import { 
   Users, 
   Briefcase, 
@@ -36,6 +37,11 @@ import {
   Plus,
   Minus,
   Check,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  ExternalLink,
+  FileCheck,
   Pencil,
   MapPin,
   Navigation
@@ -68,6 +74,7 @@ type AdminTab =
   | 'tracking'
   | 'connections' 
   | 'inscriptions'
+  | 'identities'
   | 'qrcodes'
   | 'private' 
   | 'scanner' 
@@ -89,6 +96,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       const sub = params.get('sub');
       if (sub === 'chat' || params.get('chatUserId')) return 'private';
       if (sub === 'inscriptions') return 'inscriptions';
+      if (sub === 'identities' || sub === 'pieces_identite' || sub === 'identite') return 'identities';
       if (sub === 'requests' || sub === 'demandes') return 'requests';
       if (sub === 'payments' || sub === 'paiements') return 'payments';
       if (sub === 'workers' || sub === 'travailleurs') return 'workers';
@@ -106,6 +114,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       if (targetSub) {
         if (targetSub === 'chat') setActiveTab('private');
         else if (targetSub === 'inscriptions') setActiveTab('inscriptions');
+        else if (targetSub === 'identities' || targetSub === 'pieces_identite' || targetSub === 'identite') setActiveTab('identities');
         else if (targetSub === 'requests' || targetSub === 'demandes') setActiveTab('requests');
         else if (targetSub === 'payments' || targetSub === 'paiements') setActiveTab('payments');
         else if (targetSub === 'workers' || targetSub === 'travailleurs') setActiveTab('workers');
@@ -199,6 +208,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     paiementAmount: string;
   }>>([]);
   
+  // FILANT°225 Identity Verification states
+  const [identities, setIdentities] = useState<IdentityDocument[]>([]);
+  const [identityFilter, setIdentityFilter] = useState<'all' | 'en_attente' | 'validee' | 'refusee'>('all');
+  const [previewIdentityImage, setPreviewIdentityImage] = useState<{ url: string; title: string; userName?: string } | null>(null);
+  const [processingIdentityId, setProcessingIdentityId] = useState<string | null>(null);
+
   // Data States
   const [data, setData] = useState<Record<string, any[]>>({
     connections: [],
@@ -351,11 +366,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
       });
     });
 
+    const unsubIdentities = identityService.subscribeToAllIdentities((idDocs) => {
+      setIdentities(idDocs);
+    });
+
     setLoading(false);
 
     return () => {
       unsubConns();
       unsubInscriptions();
+      unsubIdentities();
       unsubQRCodes();
       unsubPrivate();
       unsubScans();
@@ -376,6 +396,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     switch (tabId) {
       case 'connections': return data.connections.filter(i => i.adminReadStatus === 'NON LU').length;
       case 'inscriptions': return data.inscriptions.filter(i => i.adminReadStatus === 'NON LU').length;
+      case 'identities': return identities.filter(i => i.status === 'en_attente').length;
       case 'qrcodes': return data.qrCodes.filter(i => i.adminReadStatus === 'NON LU').length;
       case 'private': return data.privateMsgs.filter(i => i.adminReadStatus === 'NON LU').length;
       case 'scanner': return data.scanner.filter(i => i.adminReadStatus === 'NON LU').length;
@@ -392,6 +413,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
 
   const stats = [
     { id: 'inscriptions' as AdminTab, label: 'Inscriptions', value: data.inscriptions.length, unread: getUnreadCount('inscriptions'), icon: Briefcase, color: 'text-blue-500' },
+    { id: 'identities' as AdminTab, label: 'Vérification Identités', value: identities.length, unread: getUnreadCount('identities'), icon: ShieldCheck, color: 'text-indigo-500' },
     { id: 'private' as AdminTab, label: 'Privé', value: data.privateMsgs.length, unread: getUnreadCount('private'), icon: Mail, color: 'text-green-500' },
     { id: 'payments' as AdminTab, label: 'Paiements', value: data.payments.length, unread: getUnreadCount('payments'), icon: CreditCard, color: 'text-orange-500' },
     { id: 'requests' as AdminTab, label: 'Demandes', value: data.requests.length, unread: getUnreadCount('requests'), icon: FileText, color: 'text-rose-500' },
@@ -1074,6 +1096,391 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     );
   };
 
+  const handleValidateIdentity = async (idDoc: IdentityDocument) => {
+    try {
+      setProcessingIdentityId(idDoc.id || idDoc.userId);
+      await identityService.validateIdentity(idDoc);
+      alert(`La pièce d'identité de ${idDoc.userName || 'l\'utilisateur'} a été validée avec succès.`);
+    } catch (err: any) {
+      console.error("Error validating identity:", err);
+      alert(err.message || "Erreur lors de la validation.");
+    } finally {
+      setProcessingIdentityId(null);
+    }
+  };
+
+  const handleRejectIdentity = async (idDoc: IdentityDocument) => {
+    const confirmed = window.confirm(
+      `Confirmez-vous le refus de la pièce d'identité de ${idDoc.userName || 'cet utilisateur'} ?\n\nL'utilisateur recevra automatiquement le message :\n« Votre pièce d'identité n'a pas été validée par l'administrateur. Veuillez soumettre à nouveau des pièces d'identité correctement visibles. »`
+    );
+    if (!confirmed) return;
+
+    try {
+      setProcessingIdentityId(idDoc.id || idDoc.userId);
+      await identityService.rejectIdentity(idDoc);
+      alert("Pièce d'identité refusée. L'utilisateur a été invité à soumettre à nouveau ses pièces.");
+    } catch (err: any) {
+      console.error("Error rejecting identity:", err);
+      alert(err.message || "Erreur lors du refus.");
+    } finally {
+      setProcessingIdentityId(null);
+    }
+  };
+
+  const handleDeleteIdentity = async (idDoc: IdentityDocument) => {
+    if (!window.confirm(`Supprimer définitivement la demande de pièce d'identité de ${idDoc.userName || 'cet utilisateur'} ?`)) {
+      return;
+    }
+    try {
+      await identityService.deleteIdentity(idDoc.userId);
+    } catch (err: any) {
+      console.error("Error deleting identity doc:", err);
+      alert("Erreur lors de la suppression.");
+    }
+  };
+
+  const renderIdentitiesTab = () => {
+    const totalCount = identities.length;
+    const pendingCount = identities.filter(i => i.status === 'en_attente').length;
+    const validCount = identities.filter(i => i.status === 'validee').length;
+    const refusedCount = identities.filter(i => i.status === 'refusee').length;
+
+    const filtered = identities.filter(doc => {
+      if (identityFilter !== 'all' && doc.status !== identityFilter) return false;
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        (doc.userName || '').toLowerCase().includes(term) ||
+        (doc.userPhone || '').includes(term) ||
+        (doc.userCity || '').toLowerCase().includes(term) ||
+        (doc.userId || '').toLowerCase().includes(term)
+      );
+    });
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        {/* Banner Header */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 shadow-xl border border-indigo-900/40 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400">
+              <ShieldCheck className="w-6 h-6 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-black uppercase tracking-wider text-white">Vérification des Pièces d'Identité</h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[10px] font-black uppercase tracking-widest">
+                  Recto & Verso
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-bold mt-0.5">
+                Vérifiez la conformité des pièces d'identité soumises par les utilisateurs avant validation.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 rounded-2xl bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              {pendingCount} en attente
+            </span>
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIdentityFilter('all')}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
+              identityFilter === 'all'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'bg-white dark:bg-slate-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 border border-gray-100 dark:border-slate-800'
+            }`}
+          >
+            Tous ({totalCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setIdentityFilter('en_attente')}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+              identityFilter === 'en_attente'
+                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                : 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30'
+            }`}
+          >
+            <Clock size={13} />
+            En attente ({pendingCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setIdentityFilter('validee')}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+              identityFilter === 'validee'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
+                : 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30'
+            }`}
+          >
+            <CheckCircle2 size={13} />
+            Validées ({validCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setIdentityFilter('refusee')}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+              identityFilter === 'refusee'
+                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
+                : 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30'
+            }`}
+          >
+            <XCircle size={13} />
+            Refusées ({refusedCount})
+          </button>
+        </div>
+
+        {/* Identities List */}
+        {filtered.length === 0 ? (
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-12 text-center border border-gray-100 dark:border-slate-800 shadow-sm flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500 flex items-center justify-center mb-3">
+              <FileCheck size={32} />
+            </div>
+            <h3 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
+              Aucun dossier d'identité trouvé
+            </h3>
+            <p className="text-xs text-gray-400 font-bold mt-1 max-w-sm">
+              {identityFilter !== 'all' 
+                ? `Aucune pièce dans la catégorie "${identityFilter}".`
+                : "Les pièces d'identité soumises par les utilisateurs apparaîtront ici automatiquement dès qu'ils les enregistreront."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {filtered.map((idDoc) => {
+              const isProcessing = processingIdentityId === (idDoc.id || idDoc.userId);
+              const submittedDate = idDoc.submittedAt || idDoc.updatedAt || idDoc.createdAt;
+              const formattedDate = submittedDate ? formatDate(submittedDate) : 'Récemment';
+
+              return (
+                <div 
+                  key={idDoc.id || idDoc.userId}
+                  className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-xl border border-gray-100 dark:border-slate-800 flex flex-col justify-between gap-5 transition-all hover:shadow-2xl"
+                >
+                  {/* Top user profile header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center font-black text-base shadow-md shrink-0">
+                        {idDoc.userName ? idDoc.userName.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                            {idDoc.userName || 'Utilisateur'}
+                          </h4>
+                          {idDoc.profileType && (
+                            <span className="px-2 py-0.5 rounded-lg bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 text-[9px] font-black uppercase tracking-wider">
+                              {idDoc.profileType}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mt-0.5">
+                          {idDoc.userCity || 'Côte d\'Ivoire'} • {idDoc.userPhone || 'Numéro non renseigné'}
+                        </p>
+                        <p className="text-[10px] font-bold text-gray-400 mt-0.5">
+                          Soumis le : <span className="font-extrabold text-slate-700 dark:text-slate-300">{formattedDate}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Badge */}
+                    <div className="shrink-0 flex flex-col items-end gap-1.5">
+                      {idDoc.status === 'validee' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-200 dark:border-emerald-800">
+                          <CheckCircle2 size={12} />
+                          Validée
+                        </span>
+                      )}
+                      {idDoc.status === 'refusee' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[10px] font-black uppercase tracking-wider border border-rose-200 dark:border-rose-800">
+                          <XCircle size={12} />
+                          Refusée
+                        </span>
+                      )}
+                      {idDoc.status === 'en_attente' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-[10px] font-black uppercase tracking-wider border border-amber-200 dark:border-amber-800 animate-pulse">
+                          <Clock size={12} />
+                          En attente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Documents Display: Recto & Verso */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Recto */}
+                    <div className="bg-slate-50 dark:bg-slate-950/50 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          Face Avant (Recto)
+                        </span>
+                        {idDoc.rectoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewIdentityImage({ url: idDoc.rectoUrl!, title: `Face Avant (Recto) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                            className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Eye size={12} />
+                            Agrandir
+                          </button>
+                        )}
+                      </div>
+                      <div className="aspect-[16/10] bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800 relative group flex items-center justify-center">
+                        {idDoc.rectoUrl ? (
+                          <>
+                            <img 
+                              src={idDoc.rectoUrl} 
+                              alt="Recto pièce d'identité" 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                              onClick={() => setPreviewIdentityImage({ url: idDoc.rectoUrl!, title: `Face Avant (Recto) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                            />
+                            <div 
+                              onClick={() => setPreviewIdentityImage({ url: idDoc.rectoUrl!, title: `Face Avant (Recto) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-black uppercase cursor-pointer"
+                            >
+                              <Eye size={16} />
+                              Voir en grand
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center p-4 text-gray-400">
+                            <p className="text-[10px] font-bold uppercase">Recto non soumis</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Verso */}
+                    <div className="bg-slate-50 dark:bg-slate-950/50 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                          Face Arrière (Verso)
+                        </span>
+                        {idDoc.versoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewIdentityImage({ url: idDoc.versoUrl!, title: `Face Arrière (Verso) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                            className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Eye size={12} />
+                            Agrandir
+                          </button>
+                        )}
+                      </div>
+                      <div className="aspect-[16/10] bg-white dark:bg-slate-900 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-800 relative group flex items-center justify-center">
+                        {idDoc.versoUrl ? (
+                          <>
+                            <img 
+                              src={idDoc.versoUrl} 
+                              alt="Verso pièce d'identité" 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                              onClick={() => setPreviewIdentityImage({ url: idDoc.versoUrl!, title: `Face Arrière (Verso) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                            />
+                            <div 
+                              onClick={() => setPreviewIdentityImage({ url: idDoc.versoUrl!, title: `Face Arrière (Verso) — ${idDoc.userName || 'Identité'}`, userName: idDoc.userName })}
+                              className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-black uppercase cursor-pointer"
+                            >
+                              <Eye size={16} />
+                              Voir en grand
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center p-4 text-gray-400">
+                            <p className="text-[10px] font-bold uppercase">Verso non soumis</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Toolbar */}
+                  <div className="pt-2 border-t border-gray-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    {/* Communication shortcuts */}
+                    <div className="flex items-center gap-2">
+                      {idDoc.userPhone && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleWhatsAppClick(idDoc.userPhone, e)}
+                          className="px-3 py-2 rounded-xl bg-green-500/10 hover:bg-green-500 hover:text-white text-green-600 dark:text-green-400 font-bold text-[10px] uppercase transition-all active:scale-95 flex items-center gap-1.5 border border-green-500/20 cursor-pointer"
+                          title="Discuter sur WhatsApp"
+                        >
+                          <WhatsAppIcon size={12} />
+                          <span>WhatsApp</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onOpenChat(idDoc.userId, idDoc.userName || 'Utilisateur', 'Privee')}
+                        className="px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-600 hover:text-white text-blue-600 dark:text-blue-400 font-bold text-[10px] uppercase transition-all active:scale-95 flex items-center gap-1.5 border border-blue-200 dark:border-blue-900/30 cursor-pointer"
+                        title="Envoyer un message privé"
+                      >
+                        <MessageSquare size={12} />
+                        <span>Chat</span>
+                      </button>
+                    </div>
+
+                    {/* Validation / Rejection Buttons */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => handleRejectIdentity(idDoc)}
+                        className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                          idDoc.status === 'refusee'
+                            ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
+                            : 'bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/40 shadow-sm'
+                        }`}
+                        title="Refuser et demander une nouvelle soumission"
+                      >
+                        <XCircle size={14} />
+                        <span>Refuser</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isProcessing}
+                        onClick={() => handleValidateIdentity(idDoc)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 shadow-md cursor-pointer ${
+                          idDoc.status === 'validee'
+                            ? 'bg-emerald-700 text-white opacity-90'
+                            : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-emerald-600/20'
+                        }`}
+                        title="Valider définitivement la pièce d'identité"
+                      >
+                        {isProcessing ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <ShieldCheck size={14} />
+                        )}
+                        <span>{idDoc.status === 'validee' ? 'Déjà Validée' : 'Valider'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteIdentity(idDoc)}
+                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-all active:scale-95 cursor-pointer"
+                        title="Supprimer la soumission"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderTable = (headers: string[], keys: string[], sourceData: any[], collectionName?: string) => {
     const list = filteredData(sourceData);
     const headersWithStatus = activeTab === 'connections' ? ['Utilisateur bloqué', ...headers] : [...headers];
@@ -1530,6 +1937,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
     { id: 'tracking', label: 'Géolocalisation', icon: Navigation },
     { id: 'connections', label: 'Connexions', icon: BarChart3 },
     { id: 'inscriptions', label: 'Inscriptions', icon: Briefcase },
+    { id: 'identities', label: 'Vérification Identités', icon: ShieldCheck },
     { id: 'wallets', label: 'Compte des utilisateurs', icon: Users },
     { id: 'qrcodes', label: 'Gestion QR Code', icon: QrCode },
     { id: 'private', label: 'Messagerie Privée', icon: Mail },
@@ -3057,6 +3465,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
 
               {activeTab === 'tracking' && renderTrackingTab()}
 
+              {activeTab === 'identities' && renderIdentitiesTab()}
+
               {activeTab === 'disponible' && renderDisponibleTab()}
             </>
           )}
@@ -3909,6 +4319,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                 <p className="text-white/70 text-xs font-bold mt-3 uppercase tracking-wider text-center">
                   Image en taille réelle — Cliquez pour fermer
                 </p>
+              </div>
+            </motion.div>
+          )}
+
+          {previewIdentityImage && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPreviewIdentityImage(null)}
+              className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+            >
+              <div 
+                className="relative max-w-4xl max-h-[90vh] flex flex-col items-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="w-full flex items-center justify-between text-white mb-3 px-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                    <span className="text-sm font-black uppercase tracking-wider">{previewIdentityImage.title}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewIdentityImage(null)}
+                    className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-full transition-all active:scale-95 cursor-pointer"
+                    title="Fermer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <img
+                  src={previewIdentityImage.url}
+                  alt={previewIdentityImage.title}
+                  className="max-h-[80vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/20 bg-slate-950"
+                />
+                <div className="flex items-center justify-between w-full mt-3 px-2">
+                  <p className="text-white/60 text-xs font-bold uppercase tracking-wider">
+                    {previewIdentityImage.userName ? `Document de ${previewIdentityImage.userName}` : 'Document d\'identité'}
+                  </p>
+                  <a
+                    href={previewIdentityImage.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-black text-indigo-400 hover:text-indigo-300 flex items-center gap-1 uppercase tracking-wider"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink size={13} />
+                    Ouvrir dans un nouvel onglet
+                  </a>
+                </div>
               </div>
             </motion.div>
           )}

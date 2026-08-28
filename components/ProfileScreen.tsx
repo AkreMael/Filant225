@@ -1,11 +1,12 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { User, Tab, FavoriteWorker } from '../types';
+import { User, Tab, FavoriteWorker, IdentityVerificationStatus } from '../types';
 import { Heart, Phone, ExternalLink, Trash2, User as UserIcon } from 'lucide-react';
 import ScannerOverlay, { extractQRInfo } from './ScannerOverlay';
 import { databaseService, SavedContact } from '../services/databaseService';
 import { imageService } from '../services/imageService';
 import { mapsService } from '../services/mapsService';
+import { identityService } from '../services/identityService';
 import { getQuestionsForType, generateWhatsAppMessage, getFormImage } from './common/formDefinitions';
 import { getSynchronizedWorkerImage } from './WorkerListScreen';
 import WhatsAppPaymentSupportButton from './WhatsAppPaymentSupportButton';
@@ -225,6 +226,13 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
     }
     return { front: user.idCardFront || '', back: user.idCardBack || '' };
   });
+  const [idStatus, setIdStatus] = useState<IdentityVerificationStatus>(() => {
+    if (user?.phone) {
+      const storedStatus = localStorage.getItem(`filant_id_status_${user.phone}`);
+      if (storedStatus) return storedStatus as IdentityVerificationStatus;
+    }
+    return (user.idCardStatus as IdentityVerificationStatus) || 'non_soumis';
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [activeSide, setActiveSide] = useState<'front' | 'back' | null>(null);
   const [idSourceSelector, setIdSourceSelector] = useState<'front' | 'back' | null>(null);
@@ -333,6 +341,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
     let unsubContacts = () => {};
     let unsubPending = () => {};
     let unsubFavWorkers = () => {};
+    let unsubId = () => {};
 
     if (user?.phone) {
       unsubContacts = databaseService.subscribeToScannedContacts(user.phone, (newContacts) => {
@@ -354,6 +363,18 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       unsubPending = databaseService.subscribeToUserPendingPayments(user.phone, (pendingList) => {
         setPendingPayments(pendingList);
       });
+
+      unsubId = identityService.subscribeToUserIdentity(user.phone, (idDoc) => {
+        if (idDoc) {
+          setIdStatus(idDoc.status);
+          if (idDoc.rectoUrl) {
+            setIdImages(prev => ({ ...prev, front: idDoc.rectoUrl }));
+          }
+          if (idDoc.versoUrl) {
+            setIdImages(prev => ({ ...prev, back: idDoc.versoUrl }));
+          }
+        }
+      });
     }
 
     requestAnimationFrame(() => {
@@ -367,6 +388,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       unsubContacts();
       unsubFavWorkers();
       unsubPending();
+      unsubId();
     };
   }, [user?.phone]);
 
@@ -459,9 +481,70 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
     }
   };
 
-// Mode switching views removed
+  const handleIdFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const side = activeSide;
+    if (!file || !side || !user?.phone) return;
+    e.target.value = '';
 
-    const handleInstallPWA = () => {
+    if (idStatus === 'validee') {
+      onShowPopup("Pièce d’identité validée par l’administrateur.", 'alert');
+      return;
+    }
+
+    setIsUploading(true);
+    onShowPopup(`Traitement de la pièce (${side === 'front' ? 'Recto' : 'Verso'})...`, 'alert');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        if (typeof reader.result !== 'string') {
+          setIsUploading(false);
+          return;
+        }
+        try {
+          const compressedBase64 = await imageService.compressImage(reader.result, 1200, 0.85);
+          const storageSide = side === 'front' ? 'recto' : 'verso';
+          const downloadUrl = await identityService.uploadIdentityImage(user.phone, storageSide, compressedBase64);
+
+          const updatedImages = {
+            ...idImages,
+            [side]: downloadUrl
+          };
+          setIdImages(updatedImages);
+          localStorage.setItem(`filant_id_image_${side}_${user.phone}`, downloadUrl);
+
+          if (updatedImages.front && updatedImages.back) {
+            const success = await identityService.submitIdentityVerification(
+              user.phone,
+              user,
+              updatedImages.front,
+              updatedImages.back
+            );
+            if (success) {
+              setIdStatus('en_attente');
+              onShowPopup("Vos pièces d'identité (Recto & Verso) ont été enregistrées et transmises pour vérification.", 'alert');
+            } else {
+              onShowPopup("Pièce enregistrée. Erreur lors de la synchronisation de vérification.", 'alert');
+            }
+          } else {
+            onShowPopup(`Face ${side === 'front' ? 'Recto' : 'Verso'} enregistrée. Veuillez maintenant ajouter la face ${side === 'front' ? 'Verso' : 'Recto'}.`, 'alert');
+          }
+        } catch (err) {
+          console.error("Identity upload error:", err);
+          onShowPopup("Erreur lors de l'enregistrement de la pièce d'identité.", 'alert');
+        } finally {
+          setIsUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error(err);
+      setIsUploading(false);
+    }
+  };
+
+  const handleInstallPWA = () => {
         onInstallPWA();
     };
 
@@ -671,19 +754,41 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
                 <ProfileRow 
                   icon={<IdIcon className="w-10 h-10 text-blue-600" />} 
                   title="Intégration de la pièce d'identité" 
-                  subtitle={idImages.front && idImages.back ? "Fichier(s) enregistré(s) • En cours" : idImages.front || idImages.back ? "Fichier(s) enregistré(s) partiellement" : "CNI / CARTE PROF / OFFICIEL"} 
+                  subtitle={
+                    idStatus === 'validee'
+                      ? "Pièce d’identité validée par l’administrateur."
+                      : idStatus === 'refusee'
+                      ? "Non validée • Veuillez soumettre à nouveau"
+                      : idStatus === 'en_attente' || (idImages.front && idImages.back)
+                      ? "Documents transmis • En cours de vérification"
+                      : idImages.front || idImages.back
+                      ? "Fichier(s) enregistré(s) partiellement"
+                      : "CNI / CARTE PROF / OFFICIEL"
+                  } 
                   onClick={() => setShowIdModal(true)} 
-                  rightElement={idImages.front && idImages.back ? (
-                    <div className="bg-yellow-105 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-yellow-250">
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                      <span className="text-[9px] font-black text-yellow-800 uppercase tracking-tight">EN COURS</span>
-                    </div>
-                  ) : idImages.front || idImages.back ? (
-                    <div className="bg-blue-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-blue-200">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                      <span className="text-[9px] font-black text-blue-800 uppercase tracking-tight">PARTIEL</span>
-                    </div>
-                  ) : undefined} 
+                  rightElement={
+                    idStatus === 'validee' ? (
+                      <div className="bg-emerald-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-emerald-300">
+                        <div className="w-2 h-2 bg-emerald-600 rounded-full"></div>
+                        <span className="text-[9px] font-black text-emerald-800 uppercase tracking-tight">VALIDÉE</span>
+                      </div>
+                    ) : idStatus === 'refusee' ? (
+                      <div className="bg-rose-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-rose-300">
+                        <div className="w-2 h-2 bg-rose-500 rounded-full"></div>
+                        <span className="text-[9px] font-black text-rose-800 uppercase tracking-tight">REFUSÉE</span>
+                      </div>
+                    ) : idStatus === 'en_attente' || (idImages.front && idImages.back) ? (
+                      <div className="bg-amber-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-amber-300">
+                        <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                        <span className="text-[9px] font-black text-amber-800 uppercase tracking-tight">EN COURS</span>
+                      </div>
+                    ) : idImages.front || idImages.back ? (
+                      <div className="bg-blue-100 px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-blue-200">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                        <span className="text-[9px] font-black text-blue-800 uppercase tracking-tight">PARTIEL</span>
+                      </div>
+                    ) : undefined
+                  } 
                 />
                 <div className="h-px bg-gray-50 mx-4"></div>
                 <ProfileRow icon={<VideoIcon className="w-10 h-10 text-red-500" />} title="Vidéos Tuto" subtitle="Tutoriels FILANT°225" onClick={() => window.open('https://www.youtube.com/@FILANT225', '_blank')} />
@@ -764,209 +869,259 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ user, onClose, onLogout, 
       databaseService.deleteScannedContact(id);
   };
 
-  const handleIdFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!activeSide) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const renderIdModal = () => {
+    const isValidated = idStatus === 'validee';
+    const isRejected = idStatus === 'refusee';
+    const isPending = idStatus === 'en_attente' || (idImages.front && idImages.back && !isValidated && !isRejected);
 
-    setIsUploading(true);
-    onShowPopup("Intégration du document d'identité...", "alert");
+    return (
+      <div className="fixed inset-0 z-[200] flex flex-col bg-[#F3F3F3] animate-in slide-in-from-bottom duration-300">
+        <header className="p-4 flex items-center bg-white shadow-sm border-b border-gray-100">
+          <button onClick={() => setShowIdModal(false)} className="p-2 -ml-2 text-gray-800 hover:bg-gray-100 rounded-full transition-colors">
+            <BackIcon />
+          </button>
+          <h1 className="flex-1 text-center font-black uppercase text-sm tracking-tight mr-10">Intégration Pièce d'Identité</h1>
+        </header>
+        
+        <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+          {/* Status Banners */}
+          {isValidated ? (
+            <div className="bg-emerald-50 p-5 rounded-3xl border border-emerald-200 flex items-center gap-4 animate-in zoom-in duration-300 shadow-sm">
+              <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center shrink-0 shadow-md">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-emerald-900 font-extrabold text-[12px] uppercase tracking-wider mb-0.5">Pièce d’identité validée par l’administrateur.</h4>
+                <p className="text-[10px] text-emerald-700 font-bold leading-normal">Votre identité est certifiée officielle sur FILANT°225. Vos pièces d'identité sont définitivement enregistrées.</p>
+              </div>
+            </div>
+          ) : isRejected ? (
+            <div className="bg-rose-50 p-5 rounded-3xl border border-rose-200 flex items-center gap-4 animate-in zoom-in duration-300 shadow-sm">
+              <div className="w-10 h-10 bg-rose-500 rounded-full flex items-center justify-center shrink-0 shadow-md">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-rose-900 font-extrabold text-[12px] uppercase tracking-wider mb-0.5">Vérification refusée</h4>
+                <p className="text-[10px] text-rose-700 font-bold leading-normal">Votre pièce d’identité n’a pas été validée par l’administrateur. Veuillez soumettre à nouveau des pièces d’identité correctement visibles.</p>
+              </div>
+            </div>
+          ) : isPending ? (
+            <div className="bg-amber-50 p-5 rounded-3xl border border-amber-200 flex items-center gap-4 animate-in zoom-in duration-300 shadow-sm">
+              <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center shrink-0 shadow-md">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-amber-900 font-extrabold text-[12px] uppercase tracking-wider mb-0.5">En attente de vérification</h4>
+                <p className="text-[10px] text-amber-700 font-bold leading-normal">Vos documents d'identité sont enregistrés et en cours d'examen par l'administrateur.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+              <h3 className="text-blue-800 font-bold text-xs uppercase mb-1">Documents acceptés</h3>
+              <p className="text-[10px] text-blue-600 uppercase font-bold leading-relaxed">
+                CNI • CARTE PROFESSIONNELLE • DOCUMENT OFFICIEL AUTORISÉ • PIÈCE NUMÉRISÉE
+              </p>
+            </div>
+          )}
 
-    try {
-      // 1. Compress image to highly optimized base64 for reliable localStorage persistence
-      const compressedBase64 = await imageService.compressImage(file, 600, 0.65);
-      
-      const side = activeSide;
-      setIdImages(prev => {
-        const updated = { ...prev, [side]: compressedBase64 };
-        if (user?.phone) {
-          localStorage.setItem(`filant_id_image_front_${user.phone}`, updated.front);
-          localStorage.setItem(`filant_id_image_back_${user.phone}`, updated.back);
-        }
-        return updated;
-      });
+          <div className="grid gap-6">
+            {/* Face Avant (Recto) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pl-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Face Avant de la pièce (Recto)</label>
+                {isValidated && (
+                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider bg-emerald-100 px-2.5 py-0.5 rounded-full">Validé</span>
+                )}
+              </div>
+              <div 
+                onClick={() => {
+                  if (isValidated) return; // Locked permanently once validated
+                  setIdSourceSelector('front');
+                }}
+                className={`aspect-[1.6/1] w-full rounded-3xl border-2 flex flex-col items-center justify-center transition-all overflow-hidden relative group ${
+                  isValidated
+                    ? 'border-emerald-500 bg-white cursor-default'
+                    : idImages.front 
+                    ? 'border-green-500 bg-white cursor-pointer' 
+                    : isRejected
+                    ? 'border-rose-300 bg-rose-50/50 border-dashed cursor-pointer'
+                    : 'border-gray-200 bg-gray-50 border-dashed cursor-pointer'
+                }`}
+              >
+                {idImages.front ? (
+                  <>
+                    <img src={idImages.front} className="w-full h-full object-cover" alt="ID Front" referrerPolicy="no-referrer" />
+                    {isValidated ? (
+                      <div className="absolute top-3 right-3 bg-emerald-600 text-white p-1.5 rounded-full shadow-lg">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <p className="text-white text-[10px] font-black uppercase bg-orange-500 px-4 py-2 rounded-full shadow-lg">Modifier le Recto</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <CameraIcon className="w-8 h-8 text-gray-300 mb-2 animate-bounce" />
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prendre / Importer le Recto</p>
+                  </>
+                )}
+              </div>
+            </div>
 
-      onShowPopup("Image de la pièce d'identité enregistrée avec succès !", "alert");
-      setIsUploading(false);
-      setActiveSide(null);
-    } catch (err) {
-      console.error("ID processing error:", err);
-      onShowPopup("Impossible de traiter l'image.", "alert");
-      setIsUploading(false);
-    } finally {
-      if (e.target) e.target.value = '';
-    }
-  };
-
-  const renderIdModal = () => (
-    <div className="fixed inset-0 z-[200] flex flex-col bg-[#F3F3F3] animate-in slide-in-from-bottom duration-300">
-      <header className="p-4 flex items-center bg-white shadow-sm border-b border-gray-100">
-        <button onClick={() => setShowIdModal(false)} className="p-2 -ml-2 text-gray-800 hover:bg-gray-100 rounded-full transition-colors">
-          <BackIcon />
-        </button>
-        <h1 className="flex-1 text-center font-black uppercase text-sm tracking-tight mr-10">Intégration Pièce d'Identité</h1>
-      </header>
-      
-      <div className="flex-1 p-6 space-y-8 overflow-y-auto">
-        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-          <h3 className="text-blue-800 font-bold text-xs uppercase mb-1">Documents acceptés</h3>
-          <p className="text-[10px] text-blue-600 uppercase font-bold leading-relaxed">
-            CNI • CARTE PROFESSIONNELLE • DOCUMENT OFFICIEL AUTORISÉ • PIÈCE NUMÉRISÉE
-          </p>
-        </div>
-
-        <div className="grid gap-6">
-          {/* Face Avant */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Face Avant de la pièce (Recto)</label>
-            <div 
-              onClick={() => {
-                setIdSourceSelector('front');
-              }}
-              className={`aspect-[1.6/1] w-full rounded-3xl border-2 border-dashed flex flex-col items-center justify-center transition-all overflow-hidden relative group cursor-pointer ${idImages.front ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}
-            >
-              {idImages.front ? (
-                <>
-                  <img src={idImages.front} className="w-full h-full object-cover" alt="ID Front" />
-                  <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <p className="text-white text-[10px] font-black uppercase bg-orange-500 px-4 py-2 rounded-full shadow-lg">Modifier</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <CameraIcon className="w-8 h-8 text-gray-300 mb-2 animate-bounce" />
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prendre / Importer</p>
-                </>
-              )}
+            {/* Face Arrière (Verso) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pl-1">
+                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Face Arrière de la pièce (Verso)</label>
+                {isValidated && (
+                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider bg-emerald-100 px-2.5 py-0.5 rounded-full">Validé</span>
+                )}
+              </div>
+              <div 
+                onClick={() => {
+                  if (isValidated) return; // Locked permanently once validated
+                  setIdSourceSelector('back');
+                }}
+                className={`aspect-[1.6/1] w-full rounded-3xl border-2 flex flex-col items-center justify-center transition-all overflow-hidden relative group ${
+                  isValidated
+                    ? 'border-emerald-500 bg-white cursor-default'
+                    : idImages.back 
+                    ? 'border-green-500 bg-white cursor-pointer' 
+                    : isRejected
+                    ? 'border-rose-300 bg-rose-50/50 border-dashed cursor-pointer'
+                    : 'border-gray-200 bg-gray-50 border-dashed cursor-pointer'
+                }`}
+              >
+                {idImages.back ? (
+                  <>
+                    <img src={idImages.back} className="w-full h-full object-cover" alt="ID Back" referrerPolicy="no-referrer" />
+                    {isValidated ? (
+                      <div className="absolute top-3 right-3 bg-emerald-600 text-white p-1.5 rounded-full shadow-lg">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <p className="text-white text-[10px] font-black uppercase bg-orange-500 px-4 py-2 rounded-full shadow-lg">Modifier le Verso</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <CameraIcon className="w-8 h-8 text-gray-300 mb-2 animate-bounce" />
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prendre / Importer le Verso</p>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Face Arrière */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest pl-1">Face Arrière de la pièce (Verso)</label>
-            <div 
-              onClick={() => {
-                setIdSourceSelector('back');
-              }}
-              className={`aspect-[1.6/1] w-full rounded-3xl border-2 border-dashed flex flex-col items-center justify-center transition-all overflow-hidden relative group cursor-pointer ${idImages.back ? 'border-green-500 bg-white' : 'border-gray-200 bg-gray-50'}`}
-            >
-              {idImages.back ? (
-                <>
-                  <img src={idImages.back} className="w-full h-full object-cover" alt="ID Back" />
-                  <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <p className="text-white text-[10px] font-black uppercase bg-orange-500 px-4 py-2 rounded-full shadow-lg">Modifier</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <CameraIcon className="w-8 h-8 text-gray-300 mb-2 animate-bounce" />
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Prendre / Importer</p>
-                </>
-              )}
+          {isUploading && (
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-2xl flex items-center gap-3">
+              <div className="w-5 h-5 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs font-black text-orange-800 uppercase tracking-wider">Téléchargement sécurisé en cours...</p>
             </div>
-          </div>
+          )}
         </div>
 
-        {idImages.front && idImages.back && (
-          <div className="bg-yellow-50 p-5 rounded-3xl border border-yellow-100 flex items-center gap-4 animate-in zoom-in duration-300 border-dashed">
-            <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center shrink-0">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            </div>
-            <div>
-              <h4 className="text-yellow-800 font-extrabold text-[12px] uppercase tracking-wider mb-0.5">En cours de vérification</h4>
-              <p className="text-[10px] text-yellow-600 uppercase font-bold leading-normal">Vos documents d'identité sont sécurisés et bloqués pour vérification.</p>
+        <div className="p-4 bg-white border-t border-gray-100">
+          <button 
+            onClick={() => setShowIdModal(false)}
+            className="w-full py-4 bg-slate-900 hover:bg-black text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl shadow-slate-900/20 active:scale-95 transition-all cursor-pointer"
+          >
+            {isValidated ? "Fermer (Pièce validée)" : idImages.front && idImages.back ? "Fermer et Enregistrer" : "Continuer plus tard"}
+          </button>
+        </div>
+
+        {/* Camera capture input */}
+        <input 
+          type="file" 
+          ref={idCameraInputRef} 
+          onChange={handleIdFileChange} 
+          className="hidden" 
+          accept="image/*" 
+          capture="environment"
+        />
+
+        {/* Photo gallery input */}
+        <input 
+          type="file" 
+          ref={idGalleryInputRef} 
+          onChange={handleIdFileChange} 
+          className="hidden" 
+          accept="image/*" 
+        />
+
+        {/* Custom Bottom Action Sheet for Image Source Selection */}
+        {!isValidated && idSourceSelector && (
+          <div className="absolute inset-0 z-[250] flex flex-col justify-end bg-black/60 transition-opacity animate-in fade-in duration-200">
+            <div 
+              className="absolute inset-0" 
+              onClick={() => setIdSourceSelector(null)}
+            ></div>
+            <div className="relative z-10 bg-white rounded-t-[2.5rem] p-6 pb-12 space-y-5 shadow-2xl animate-in slide-in-from-bottom duration-300">
+              <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-2"></div>
+              <h3 className="text-gray-900 font-extrabold text-center uppercase tracking-wider text-xs">
+                Ajouter une photo ({idSourceSelector === 'front' ? 'Face Avant / Recto' : 'Face Arrière / Verso'})
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const side = idSourceSelector;
+                    setIdSourceSelector(null);
+                    setActiveSide(side);
+                    setTimeout(() => {
+                      idCameraInputRef.current?.click();
+                    }, 100);
+                  }}
+                  className="flex flex-col items-center justify-center p-6 bg-orange-50 hover:bg-orange-100 active:scale-95 rounded-3xl border border-orange-100 transition-all text-orange-600 gap-2 cursor-pointer"
+                >
+                  <CameraIcon className="w-8 h-8 text-orange-500" />
+                  <span className="text-[10px] font-black uppercase tracking-wider mt-1">Appareil Photo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const side = idSourceSelector;
+                    setIdSourceSelector(null);
+                    setActiveSide(side);
+                    setTimeout(() => {
+                      idGalleryInputRef.current?.click();
+                    }, 100);
+                  }}
+                  className="flex flex-col items-center justify-center p-6 bg-blue-50 hover:bg-blue-100 active:scale-95 rounded-3xl border border-blue-100 transition-all text-blue-600 gap-2 cursor-pointer"
+                >
+                  <PhotoIcon className="w-8 h-8 text-blue-500" />
+                  <span className="text-[10px] font-black uppercase tracking-wider mt-1">Galerie Photos</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIdSourceSelector(null)}
+                className="w-full py-4 text-center text-gray-500 hover:text-gray-700 bg-gray-100 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer"
+              >
+                Annuler
+              </button>
             </div>
           </div>
         )}
       </div>
-
-      <div className="p-4 bg-white border-t border-gray-100">
-        <button 
-          onClick={() => setShowIdModal(false)}
-          className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-[0.2em] text-[10px] rounded-2xl shadow-xl shadow-slate-900/20 active:scale-95 transition-all"
-        >
-          {idImages.front && idImages.back ? "Fermer et Valider" : "Continuer plus tard"}
-        </button>
-      </div>
-
-      {/* Camera capture input */}
-      <input 
-        type="file" 
-        ref={idCameraInputRef} 
-        onChange={handleIdFileChange} 
-        className="hidden" 
-        accept="image/*" 
-        capture="environment"
-      />
-
-      {/* Photo gallery input */}
-      <input 
-        type="file" 
-        ref={idGalleryInputRef} 
-        onChange={handleIdFileChange} 
-        className="hidden" 
-        accept="image/*" 
-      />
-
-      {/* Custom Bottom Action Sheet for Image Source Selection */}
-      {idSourceSelector && (
-        <div className="absolute inset-0 z-[250] flex flex-col justify-end bg-black/60 transition-opacity animate-in fade-in duration-200">
-          <div 
-            className="absolute inset-0" 
-            onClick={() => setIdSourceSelector(null)}
-          ></div>
-          <div className="relative z-10 bg-white rounded-t-[2.5rem] p-6 pb-12 space-y-5 shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-2"></div>
-            <h3 className="text-gray-900 font-extrabold text-center uppercase tracking-wider text-xs">
-              Ajouter une photo ({idSourceSelector === 'front' ? 'Face Avant / Recto' : 'Face Arrière / Verso'})
-            </h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => {
-                  const side = idSourceSelector;
-                  setIdSourceSelector(null);
-                  setActiveSide(side);
-                  setTimeout(() => {
-                    idCameraInputRef.current?.click();
-                  }, 100);
-                }}
-                className="flex flex-col items-center justify-center p-6 bg-orange-50 hover:bg-orange-100 active:scale-95 rounded-3xl border border-orange-100 transition-all text-orange-600 gap-2 cursor-pointer"
-              >
-                <CameraIcon className="w-8 h-8 text-orange-500" />
-                <span className="text-[10px] font-black uppercase tracking-wider mt-1">Appareil Photo</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const side = idSourceSelector;
-                  setIdSourceSelector(null);
-                  setActiveSide(side);
-                  setTimeout(() => {
-                    idGalleryInputRef.current?.click();
-                  }, 100);
-                }}
-                className="flex flex-col items-center justify-center p-6 bg-blue-50 hover:bg-blue-100 active:scale-95 rounded-3xl border border-blue-100 transition-all text-blue-600 gap-2 cursor-pointer"
-              >
-                <PhotoIcon className="w-8 h-8 text-blue-500" />
-                <span className="text-[10px] font-black uppercase tracking-wider mt-1">Galerie Photos</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIdSourceSelector(null)}
-              className="w-full py-4 text-center text-gray-500 hover:text-gray-700 bg-gray-100 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all cursor-pointer"
-            >
-              Annuler
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    );
+  };
 
   const renderHistoryView = () => (
     <div className="bg-[#F3F3F3] h-full flex flex-col animate-in slide-in-from-right duration-300">

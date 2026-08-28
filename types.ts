@@ -175,3 +175,21 @@ export interface VoiceMessagePayload {
   transcription?: string;
 }
 
+export type IdentityVerificationStatus = 'non_soumis' | 'en_attente' | 'validee' | 'refusee';
+
+export interface IdentityDocument {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhone: string;
+  userCity?: string;
+  rectoUrl: string;
+  versoUrl: string;
+  status: IdentityVerificationStatus;
+  submittedAt?: any;
+  updatedAt?: any;
+  verifiedAt?: any;
+  rejectionReason?: string;
+  adminReadStatus?: 'LU' | 'NON LU' | 'VU';
+}
+
