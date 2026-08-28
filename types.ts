@@ -30,6 +30,11 @@ export interface User {
   idCardBack?: string;
   idCardUploadedAt?: any;
   idCardStatus?: string;
+  selfieUrl?: string;
+  selfieStatus?: string;
+  selfieVerifiedAt?: any;
+  faceVerified?: boolean;
+  activity?: string;
 }
 
 export interface NotificationButton {
@@ -185,7 +190,11 @@ export interface IdentityDocument {
   userCity?: string;
   rectoUrl: string;
   versoUrl: string;
-  status: IdentityVerificationStatus;
+  selfieUrl?: string;
+  status: IdentityVerificationStatus; // Identity card status (or overall)
+  selfieStatus?: IdentityVerificationStatus; // Selfie / Face verification status
+  selfieVerifiedAt?: any;
+  selfieRejectionReason?: string;
   submittedAt?: any;
   updatedAt?: any;
   verifiedAt?: any;

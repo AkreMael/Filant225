@@ -213,6 +213,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   const [identityFilter, setIdentityFilter] = useState<'all' | 'en_attente' | 'validee' | 'refusee'>('all');
   const [previewIdentityImage, setPreviewIdentityImage] = useState<{ url: string; title: string; userName?: string } | null>(null);
   const [processingIdentityId, setProcessingIdentityId] = useState<string | null>(null);
+  const [rejectModalDoc, setRejectModalDoc] = useState<IdentityDocument | null>(null);
+  const [identityFeedbackToast, setIdentityFeedbackToast] = useState<{ type: 'success' | 'refused' | 'error'; message: string } | null>(null);
 
   // Data States
   const [data, setData] = useState<Record<string, any[]>>({
@@ -1097,45 +1099,94 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
   };
 
   const handleValidateIdentity = async (idDoc: IdentityDocument) => {
+    const docId = idDoc.id || idDoc.userId;
     try {
-      setProcessingIdentityId(idDoc.id || idDoc.userId);
+      setProcessingIdentityId(docId);
+      // Optimistic update
+      setIdentities(prev => prev.map(item => {
+        if ((item.id || item.userId) === docId) {
+          return { ...item, status: 'validee', rejectionReason: null };
+        }
+        return item;
+      }));
+
       await identityService.validateIdentity(idDoc);
-      alert(`La pièce d'identité de ${idDoc.userName || 'l\'utilisateur'} a été validée avec succès.`);
+      setIdentityFeedbackToast({
+        type: 'success',
+        message: `Pièce d'identité de ${idDoc.userName || 'l\'utilisateur'} validée avec succès.`
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 4000);
     } catch (err: any) {
       console.error("Error validating identity:", err);
-      alert(err.message || "Erreur lors de la validation.");
+      setIdentityFeedbackToast({
+        type: 'error',
+        message: err.message || "Erreur lors de la validation."
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 4000);
     } finally {
       setProcessingIdentityId(null);
     }
   };
 
-  const handleRejectIdentity = async (idDoc: IdentityDocument) => {
-    const confirmed = window.confirm(
-      `Confirmez-vous le refus de la pièce d'identité de ${idDoc.userName || 'cet utilisateur'} ?\n\nL'utilisateur recevra automatiquement le message :\n« Votre pièce d'identité n'a pas été validée par l'administrateur. Veuillez soumettre à nouveau des pièces d'identité correctement visibles. »`
-    );
-    if (!confirmed) return;
+  const handleOpenRejectModal = (idDoc: IdentityDocument) => {
+    setRejectModalDoc(idDoc);
+  };
 
+  const handleConfirmRejection = async (idDoc: IdentityDocument, customReason?: string) => {
+    const docId = idDoc.id || idDoc.userId;
+    const refusalMessage = customReason || "Votre pièce d’identité n’a pas été validée par l’administrateur. Veuillez soumettre à nouveau des pièces d’identité correctement visibles.";
+    
     try {
-      setProcessingIdentityId(idDoc.id || idDoc.userId);
-      await identityService.rejectIdentity(idDoc);
-      alert("Pièce d'identité refusée. L'utilisateur a été invité à soumettre à nouveau ses pièces.");
+      setProcessingIdentityId(docId);
+      setRejectModalDoc(null);
+
+      // Optimistic update so UI reflects immediately
+      setIdentities(prev => prev.map(item => {
+        if ((item.id || item.userId) === docId) {
+          return { 
+            ...item, 
+            status: 'refusee', 
+            rejectionReason: refusalMessage 
+          };
+        }
+        return item;
+      }));
+
+      await identityService.rejectIdentity(idDoc, refusalMessage);
+      setIdentityFeedbackToast({
+        type: 'refused',
+        message: `Pièce d'identité refusée. Le message a été transmis à ${idDoc.userName || 'l\'utilisateur'}.`
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 4500);
     } catch (err: any) {
       console.error("Error rejecting identity:", err);
-      alert(err.message || "Erreur lors du refus.");
+      setIdentityFeedbackToast({
+        type: 'error',
+        message: err.message || "Erreur lors du refus de la pièce."
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 4000);
     } finally {
       setProcessingIdentityId(null);
     }
   };
 
   const handleDeleteIdentity = async (idDoc: IdentityDocument) => {
-    if (!window.confirm(`Supprimer définitivement la demande de pièce d'identité de ${idDoc.userName || 'cet utilisateur'} ?`)) {
-      return;
-    }
     try {
+      const docId = idDoc.id || idDoc.userId;
+      setIdentities(prev => prev.filter(i => (i.id || i.userId) !== docId));
       await identityService.deleteIdentity(idDoc.userId);
+      setIdentityFeedbackToast({
+        type: 'success',
+        message: "Demande de vérification supprimée."
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 3000);
     } catch (err: any) {
       console.error("Error deleting identity doc:", err);
-      alert("Erreur lors de la suppression.");
+      setIdentityFeedbackToast({
+        type: 'error',
+        message: "Erreur lors de la suppression."
+      });
+      setTimeout(() => setIdentityFeedbackToast(null), 3000);
     }
   };
 
@@ -1191,7 +1242,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           <button
             type="button"
             onClick={() => setIdentityFilter('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 cursor-pointer ${
               identityFilter === 'all'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
                 : 'bg-white dark:bg-slate-900 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 border border-gray-100 dark:border-slate-800'
@@ -1202,7 +1253,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           <button
             type="button"
             onClick={() => setIdentityFilter('en_attente')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
               identityFilter === 'en_attente'
                 ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
                 : 'bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20 border border-amber-200 dark:border-amber-900/30'
@@ -1214,7 +1265,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           <button
             type="button"
             onClick={() => setIdentityFilter('validee')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
               identityFilter === 'validee'
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20'
                 : 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30'
@@ -1226,7 +1277,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
           <button
             type="button"
             onClick={() => setIdentityFilter('refusee')}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 ${
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
               identityFilter === 'refusee'
                 ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20'
                 : 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30'
@@ -1236,6 +1287,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
             Refusées ({refusedCount})
           </button>
         </div>
+
+        {/* Feedback Toast */}
+        {identityFeedbackToast && (
+          <div className={`p-4 rounded-2xl border animate-in slide-in-from-top-2 duration-200 flex items-center gap-3 shadow-md ${
+            identityFeedbackToast.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 text-emerald-800 dark:text-emerald-200'
+              : identityFeedbackToast.type === 'refused'
+              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 text-rose-800 dark:text-rose-200'
+              : 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 text-amber-800 dark:text-amber-200'
+          }`}>
+            {identityFeedbackToast.type === 'success' ? (
+              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : identityFeedbackToast.type === 'refused' ? (
+              <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+            )}
+            <p className="text-xs font-bold flex-1">{identityFeedbackToast.message}</p>
+            <button 
+              type="button"
+              onClick={() => setIdentityFeedbackToast(null)}
+              className="p-1 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         {/* Identities List */}
         {filtered.length === 0 ? (
@@ -1431,7 +1509,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                       <button
                         type="button"
                         disabled={isProcessing}
-                        onClick={() => handleRejectIdentity(idDoc)}
+                        onClick={() => handleOpenRejectModal(idDoc)}
                         className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                           idDoc.status === 'refusee'
                             ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800'
@@ -1440,7 +1518,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                         title="Refuser et demander une nouvelle soumission"
                       >
                         <XCircle size={14} />
-                        <span>Refuser</span>
+                        <span>{idDoc.status === 'refusee' ? 'Refusée' : 'Refuser'}</span>
                       </button>
 
                       <button
@@ -1475,6 +1553,67 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack, user, onOpenCha
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Rejection Confirmation Modal */}
+        {rejectModalDoc && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-100 dark:border-slate-800 space-y-5 animate-in zoom-in-95 duration-200">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <XCircle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                      Refuser la pièce d'identité
+                    </h3>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 font-bold mt-0.5">
+                      {rejectModalDoc.userName || 'Utilisateur'} (+225 {rejectModalDoc.userPhone || rejectModalDoc.userId})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRejectModalDoc(null)}
+                  className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="bg-rose-50 dark:bg-rose-950/30 p-4 rounded-2xl border border-rose-200 dark:border-rose-900/40">
+                <p className="text-[10px] font-black uppercase text-rose-800 dark:text-rose-300 tracking-wider mb-1">
+                  Message envoyé à l'utilisateur :
+                </p>
+                <p className="text-xs font-bold text-rose-900 dark:text-rose-200 leading-relaxed">
+                  « Votre pièce d’identité n’a pas été validée par l’administrateur. Veuillez soumettre à nouveau des pièces d’identité correctement visibles. »
+                </p>
+              </div>
+
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+                En confirmant, le statut du dossier passera à <span className="font-black text-rose-600 uppercase">Refusée</span>. L'utilisateur recevra la notification et pourra soumettre à nouveau son identité recto-verso depuis son espace Profil.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalDoc(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmRejection(rejectModalDoc)}
+                  className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-rose-600 hover:bg-rose-700 active:scale-95 text-white shadow-lg shadow-rose-600/30 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <XCircle size={15} />
+                  <span>Confirmer le refus</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -4,6 +4,7 @@ import {
   setDoc, 
   getDoc, 
   collection, 
+  addDoc,
   onSnapshot, 
   serverTimestamp, 
   query, 
@@ -36,12 +37,12 @@ const ensureAuth = async () => {
 
 export const identityService = {
   /**
-   * Uploads identity document image (recto or verso) to Firebase Storage
-   * Path: identityDocuments/{userId}/recto or identityDocuments/{userId}/verso
+   * Uploads identity document or selfie image to Firebase Storage
+   * Path: identityDocuments/{userId}/recto, verso, or selfie
    */
   uploadIdentityImage: async (
     userId: string, 
-    side: 'recto' | 'verso', 
+    side: 'recto' | 'verso' | 'selfie', 
     imageData: File | Blob | string
   ): Promise<string> => {
     const cleanId = sanitizeUserId(userId);
@@ -49,7 +50,7 @@ export const identityService = {
 
     await ensureAuth();
 
-    // Specific dedicated folder strictly separated from profile pictures
+    // Specific dedicated folder strictly separated from standard uploads
     const path = `identityDocuments/${cleanId}/${side}`;
     const fileRef = storageRef(storage, path);
 
@@ -61,7 +62,7 @@ export const identityService = {
             customMetadata: {
               userId: cleanId,
               side: side,
-              type: 'identity_document',
+              type: side === 'selfie' ? 'face_verification_selfie' : 'identity_document',
               uploadedAt: new Date().toISOString()
             }
           });
@@ -74,7 +75,7 @@ export const identityService = {
             customMetadata: {
               userId: cleanId,
               side: side,
-              type: 'identity_document'
+              type: side === 'selfie' ? 'face_verification_selfie' : 'identity_document'
             }
           });
         }
@@ -84,7 +85,7 @@ export const identityService = {
           customMetadata: {
             userId: cleanId,
             side: side,
-            type: 'identity_document',
+            type: side === 'selfie' ? 'face_verification_selfie' : 'identity_document',
             uploadedAt: new Date().toISOString()
           }
         });
@@ -109,7 +110,8 @@ export const identityService = {
     userId: string,
     userInfo: { name: string; phone: string; city?: string },
     rectoUrl: string,
-    versoUrl: string
+    versoUrl: string,
+    selfieUrl?: string
   ): Promise<boolean> => {
     const cleanId = sanitizeUserId(userId || userInfo.phone);
     if (!cleanId) return false;
@@ -132,16 +134,25 @@ export const identityService = {
       rejectionReason: null
     };
 
+    if (selfieUrl) {
+      docData.selfieUrl = selfieUrl;
+      docData.selfieStatus = 'en_attente' as IdentityVerificationStatus;
+    }
+
     try {
       await setDoc(identityDocRef, docData, { merge: true });
 
       // Synchronize identity status & URLs to user profile in collections
-      const userProfileUpdates = {
+      const userProfileUpdates: Record<string, any> = {
         idCardFront: rectoUrl,
         idCardBack: versoUrl,
         idCardStatus: 'en_attente',
         idCardUploadedAt: serverTimestamp()
       };
+      if (selfieUrl) {
+        userProfileUpdates.selfieUrl = selfieUrl;
+        userProfileUpdates.selfieStatus = 'en_attente';
+      }
 
       const collectionsToSync = ['Clients', 'Travailleurs', 'Agences immobilières', 'Équipements', 'Entreprises', 'Inscriptions'];
       for (const col of collectionsToSync) {
@@ -157,10 +168,73 @@ export const identityService = {
       localStorage.setItem(`filant_id_image_front_${cleanId}`, rectoUrl);
       localStorage.setItem(`filant_id_image_back_${cleanId}`, versoUrl);
       localStorage.setItem(`filant_id_status_${cleanId}`, 'en_attente');
+      if (selfieUrl) {
+        localStorage.setItem(`filant_id_selfie_${cleanId}`, selfieUrl);
+        localStorage.setItem(`filant_id_selfie_status_${cleanId}`, 'en_attente');
+      }
 
       return true;
     } catch (e) {
       console.error("Error submitting identity verification in Firestore:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Save or submit Selfie verification request in Firestore
+   */
+  submitSelfieVerification: async (
+    userId: string,
+    userInfo: { name: string; phone: string; city?: string },
+    selfieUrl: string
+  ): Promise<boolean> => {
+    const cleanId = sanitizeUserId(userId || userInfo.phone);
+    if (!cleanId) return false;
+
+    await ensureAuth();
+
+    const identityDocRef = doc(db, 'IdentityDocuments', cleanId);
+    const docData: Record<string, any> = {
+      id: cleanId,
+      userId: cleanId,
+      userName: userInfo.name || 'Utilisateur',
+      userPhone: userInfo.phone || cleanId,
+      userCity: userInfo.city || 'Non spécifiée',
+      selfieUrl: selfieUrl,
+      selfieStatus: 'en_attente' as IdentityVerificationStatus,
+      selfieSubmittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      adminReadStatus: 'NON LU',
+      selfieRejectionReason: null
+    };
+
+    try {
+      await setDoc(identityDocRef, docData, { merge: true });
+
+      // Synchronize selfie to user profile in collections
+      const userProfileUpdates = {
+        selfieUrl: selfieUrl,
+        selfieStatus: 'en_attente',
+        selfieUploadedAt: serverTimestamp()
+      };
+
+      const collectionsToSync = ['Clients', 'Travailleurs', 'Agences immobilières', 'Équipements', 'Entreprises', 'Inscriptions'];
+      for (const col of collectionsToSync) {
+        try {
+          const userRef = doc(db, col, cleanId);
+          await setDoc(userRef, userProfileUpdates, { merge: true });
+        } catch (syncErr) {
+          // silent sync ignore
+        }
+      }
+
+      // Persist in local storage
+      localStorage.setItem(`filant_id_selfie_${cleanId}`, selfieUrl);
+      localStorage.setItem(`filant_id_selfie_status_${cleanId}`, 'en_attente');
+
+      return true;
+    } catch (e) {
+      console.error("Error submitting selfie verification in Firestore:", e);
       return false;
     }
   },
@@ -185,7 +259,11 @@ export const identityService = {
           userCity: d.userCity || 'Non spécifiée',
           rectoUrl: d.rectoUrl || '',
           versoUrl: d.versoUrl || '',
-          status: (d.status || 'en_attente') as IdentityVerificationStatus,
+          selfieUrl: d.selfieUrl || '',
+          status: (d.status || 'non_soumis') as IdentityVerificationStatus,
+          selfieStatus: (d.selfieStatus || (d.selfieUrl ? 'en_attente' : 'non_soumis')) as IdentityVerificationStatus,
+          selfieVerifiedAt: d.selfieVerifiedAt,
+          selfieRejectionReason: d.selfieRejectionReason,
           submittedAt: d.submittedAt,
           updatedAt: d.updatedAt,
           verifiedAt: d.verifiedAt,
@@ -224,7 +302,11 @@ export const identityService = {
           userCity: d.userCity || 'Non spécifiée',
           rectoUrl: d.rectoUrl || '',
           versoUrl: d.versoUrl || '',
-          status: (d.status || 'en_attente') as IdentityVerificationStatus,
+          selfieUrl: d.selfieUrl || '',
+          status: (d.status || 'non_soumis') as IdentityVerificationStatus,
+          selfieStatus: (d.selfieStatus || (d.selfieUrl ? 'en_attente' : 'non_soumis')) as IdentityVerificationStatus,
+          selfieVerifiedAt: d.selfieVerifiedAt,
+          selfieRejectionReason: d.selfieRejectionReason,
           submittedAt: d.submittedAt,
           updatedAt: d.updatedAt,
           verifiedAt: d.verifiedAt,
@@ -236,6 +318,8 @@ export const identityService = {
         localStorage.setItem(`filant_id_status_${cleanId}`, idDoc.status);
         if (idDoc.rectoUrl) localStorage.setItem(`filant_id_image_front_${cleanId}`, idDoc.rectoUrl);
         if (idDoc.versoUrl) localStorage.setItem(`filant_id_image_back_${cleanId}`, idDoc.versoUrl);
+        if (idDoc.selfieUrl) localStorage.setItem(`filant_id_selfie_${cleanId}`, idDoc.selfieUrl);
+        if (idDoc.selfieStatus) localStorage.setItem(`filant_id_selfie_status_${cleanId}`, idDoc.selfieStatus);
         
         callback(idDoc);
       } else {
@@ -264,7 +348,11 @@ export const identityService = {
           userCity: d.userCity || 'Non spécifiée',
           rectoUrl: d.rectoUrl || '',
           versoUrl: d.versoUrl || '',
-          status: (d.status || 'en_attente') as IdentityVerificationStatus,
+          selfieUrl: d.selfieUrl || '',
+          status: (d.status || 'non_soumis') as IdentityVerificationStatus,
+          selfieStatus: (d.selfieStatus || (d.selfieUrl ? 'en_attente' : 'non_soumis')) as IdentityVerificationStatus,
+          selfieVerifiedAt: d.selfieVerifiedAt,
+          selfieRejectionReason: d.selfieRejectionReason,
           submittedAt: d.submittedAt,
           updatedAt: d.updatedAt,
           verifiedAt: d.verifiedAt,
@@ -273,10 +361,12 @@ export const identityService = {
         };
       });
 
-      // Sort: en_attente first, then by date descending
+      // Sort: en_attente (either ID card or selfie) first, then by date descending
       docs.sort((a, b) => {
-        if (a.status === 'en_attente' && b.status !== 'en_attente') return -1;
-        if (a.status !== 'en_attente' && b.status === 'en_attente') return 1;
+        const aPending = a.status === 'en_attente' || a.selfieStatus === 'en_attente';
+        const bPending = b.status === 'en_attente' || b.selfieStatus === 'en_attente';
+        if (aPending && !bPending) return -1;
+        if (!aPending && bPending) return 1;
         const timeA = a.submittedAt?.toMillis ? a.submittedAt.toMillis() : (a.submittedAt ? new Date(a.submittedAt).getTime() : 0);
         const timeB = b.submittedAt?.toMillis ? b.submittedAt.toMillis() : (b.submittedAt ? new Date(b.submittedAt).getTime() : 0);
         return timeB - timeA;
@@ -289,7 +379,7 @@ export const identityService = {
   },
 
   /**
-   * Admin action: Validate user's identity
+   * Admin action: Validate user's ID Card (Recto & Verso)
    */
   validateIdentity: async (target: string | IdentityDocument): Promise<boolean> => {
     const rawId = typeof target === 'string' ? target : (target.userId || target.id);
@@ -326,6 +416,22 @@ export const identityService = {
         }
       }
 
+      // Notify user via private message
+      try {
+        await addDoc(collection(db, 'PrivateMessages'), {
+          userId: cleanId,
+          recipientId: cleanId,
+          sender: 'admin',
+          senderName: 'Administration FILANT°225',
+          message: "✅ Votre pièce d'identité a été validée par l'administrateur. Votre profil est désormais certifié officiel sur FILANT°225.",
+          timestamp: serverTimestamp(),
+          adminReadStatus: 'LU',
+          type: 'identity_validation'
+        });
+      } catch (msgErr) {
+        // non-blocking
+      }
+
       localStorage.setItem(`filant_id_status_${cleanId}`, 'validee');
       return true;
     } catch (e) {
@@ -335,7 +441,7 @@ export const identityService = {
   },
 
   /**
-   * Admin action: Reject user's identity
+   * Admin action: Reject user's ID Card
    */
   rejectIdentity: async (target: string | IdentityDocument, reason?: string): Promise<boolean> => {
     const rawId = typeof target === 'string' ? target : (target.userId || target.id);
@@ -344,11 +450,13 @@ export const identityService = {
 
     await ensureAuth();
 
+    const officialRejectionMessage = reason || "Votre pièce d’identité n’a pas été validée par l’administrateur. Veuillez soumettre à nouveau des pièces d’identité correctement visibles.";
+
     try {
       const docRef = doc(db, 'IdentityDocuments', cleanId);
       await setDoc(docRef, {
         status: 'refusee',
-        rejectionReason: reason || "Pièce d'identité non conforme ou illisible",
+        rejectionReason: officialRejectionMessage,
         rejectedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         adminReadStatus: 'VU'
@@ -358,7 +466,7 @@ export const identityService = {
         idCardStatus: 'refusee',
         isVerified: false,
         identityVerified: false,
-        rejectionReason: reason || "Pièce d'identité non conforme ou illisible",
+        rejectionReason: officialRejectionMessage,
         rejectedAt: serverTimestamp()
       };
 
@@ -372,10 +480,169 @@ export const identityService = {
         }
       }
 
+      // Notify user via private message
+      try {
+        await addDoc(collection(db, 'PrivateMessages'), {
+          userId: cleanId,
+          recipientId: cleanId,
+          sender: 'admin',
+          senderName: 'Administration FILANT°225',
+          message: `⚠️ ${officialRejectionMessage}`,
+          timestamp: serverTimestamp(),
+          adminReadStatus: 'LU',
+          type: 'identity_rejection'
+        });
+      } catch (msgErr) {
+        // non-blocking
+      }
+
       localStorage.setItem(`filant_id_status_${cleanId}`, 'refusee');
       return true;
     } catch (e) {
       console.error("Error rejecting identity:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Admin action: Validate user's Selfie / Face verification
+   */
+  validateSelfie: async (target: string | IdentityDocument, selfieUrl?: string): Promise<boolean> => {
+    const rawId = typeof target === 'string' ? target : (target.userId || target.id);
+    const cleanId = sanitizeUserId(rawId);
+    if (!cleanId) return false;
+
+    await ensureAuth();
+
+    try {
+      const docRef = doc(db, 'IdentityDocuments', cleanId);
+      await setDoc(docRef, {
+        selfieStatus: 'validee',
+        selfieVerifiedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        adminReadStatus: 'VU',
+        selfieRejectionReason: null
+      }, { merge: true });
+
+      // Determine selfie URL
+      let validSelfieUrl = selfieUrl;
+      if (!validSelfieUrl && typeof target !== 'string' && target.selfieUrl) {
+        validSelfieUrl = target.selfieUrl;
+      }
+
+      const userUpdates: Record<string, any> = {
+        selfieStatus: 'validee',
+        faceVerified: true,
+        selfieVerifiedAt: serverTimestamp()
+      };
+
+      if (validSelfieUrl) {
+        userUpdates.selfieUrl = validSelfieUrl;
+        userUpdates.verifiedFaceUrl = validSelfieUrl;
+      }
+
+      const collectionsToSync = ['Clients', 'Travailleurs', 'Agences immobilières', 'Équipements', 'Entreprises', 'Inscriptions'];
+      for (const col of collectionsToSync) {
+        try {
+          const userRef = doc(db, col, cleanId);
+          await setDoc(userRef, userUpdates, { merge: true });
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Notify user via private message
+      try {
+        await addDoc(collection(db, 'PrivateMessages'), {
+          userId: cleanId,
+          recipientId: cleanId,
+          sender: 'admin',
+          senderName: 'Administration FILANT°225',
+          message: "✅ Votre selfie / photo de visage a été validé avec succès par l'administrateur. Votre profil affiche désormais votre photo officielle certifiée.",
+          timestamp: serverTimestamp(),
+          adminReadStatus: 'LU',
+          type: 'selfie_validation'
+        });
+      } catch (msgErr) {
+        // non-blocking
+      }
+
+      localStorage.setItem(`filant_id_selfie_status_${cleanId}`, 'validee');
+      if (validSelfieUrl) {
+        localStorage.setItem(`filant_id_selfie_${cleanId}`, validSelfieUrl);
+        // Also update profile avatar if appropriate
+        localStorage.setItem(`filant_profile_image_${cleanId}`, validSelfieUrl);
+        window.dispatchEvent(new CustomEvent('filant-profile-image-updated', {
+          detail: { phone: cleanId, imageUrl: validSelfieUrl }
+        }));
+      }
+
+      return true;
+    } catch (e) {
+      console.error("Error validating selfie:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Admin action: Reject user's Selfie / Face verification
+   */
+  rejectSelfie: async (target: string | IdentityDocument, reason?: string): Promise<boolean> => {
+    const rawId = typeof target === 'string' ? target : (target.userId || target.id);
+    const cleanId = sanitizeUserId(rawId);
+    if (!cleanId) return false;
+
+    await ensureAuth();
+
+    const officialRejectionMessage = reason || "Votre selfie n'a pas été validé par l'administrateur. Veuillez soumettre à nouveau un selfie net, bien éclairé et sans masque ou lunettes de soleil dans le cercle prévu.";
+
+    try {
+      const docRef = doc(db, 'IdentityDocuments', cleanId);
+      await setDoc(docRef, {
+        selfieStatus: 'refusee',
+        selfieRejectionReason: officialRejectionMessage,
+        selfieRejectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        adminReadStatus: 'VU'
+      }, { merge: true });
+
+      const userUpdates = {
+        selfieStatus: 'refusee',
+        faceVerified: false,
+        selfieRejectionReason: officialRejectionMessage,
+        selfieRejectedAt: serverTimestamp()
+      };
+
+      const collectionsToSync = ['Clients', 'Travailleurs', 'Agences immobilières', 'Équipements', 'Entreprises', 'Inscriptions'];
+      for (const col of collectionsToSync) {
+        try {
+          const userRef = doc(db, col, cleanId);
+          await setDoc(userRef, userUpdates, { merge: true });
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Notify user via private message
+      try {
+        await addDoc(collection(db, 'PrivateMessages'), {
+          userId: cleanId,
+          recipientId: cleanId,
+          sender: 'admin',
+          senderName: 'Administration FILANT°225',
+          message: `⚠️ ${officialRejectionMessage}`,
+          timestamp: serverTimestamp(),
+          adminReadStatus: 'LU',
+          type: 'selfie_rejection'
+        });
+      } catch (msgErr) {
+        // non-blocking
+      }
+
+      localStorage.setItem(`filant_id_selfie_status_${cleanId}`, 'refusee');
+      return true;
+    } catch (e) {
+      console.error("Error rejecting selfie:", e);
       return false;
     }
   },
@@ -395,6 +662,8 @@ export const identityService = {
       localStorage.removeItem(`filant_id_status_${cleanId}`);
       localStorage.removeItem(`filant_id_image_front_${cleanId}`);
       localStorage.removeItem(`filant_id_image_back_${cleanId}`);
+      localStorage.removeItem(`filant_id_selfie_${cleanId}`);
+      localStorage.removeItem(`filant_id_selfie_status_${cleanId}`);
       return true;
     } catch (e) {
       console.error("Error deleting identity document:", e);

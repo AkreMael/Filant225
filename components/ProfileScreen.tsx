@@ -52,12 +52,24 @@ const PhotoIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="h
 const UsersIcon: React.FC<{className?: string}> = ({className}) => <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>;
 
 // --- HELPERS ---
-const ProfileAvatar = ({ imageUrl, onUpload }: { imageUrl?: string | null, onUpload: () => void }) => (
+const ProfileAvatar = ({ 
+  imageUrl, 
+  onUpload, 
+  isFaceVerified 
+}: { 
+  imageUrl?: string | null, 
+  onUpload: () => void, 
+  isFaceVerified?: boolean 
+}) => (
     <div className="relative">
-        <div className="p-[3px] bg-gradient-to-tr from-orange-500 via-amber-300 to-white rounded-full shadow-md">
-            <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-inner">
+        <div className={`p-[3px] rounded-full shadow-md ${
+          isFaceVerified 
+            ? 'bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-300' 
+            : 'bg-gradient-to-tr from-orange-500 via-amber-300 to-white'
+        }`}>
+            <div className="w-24 h-24 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center overflow-hidden border-2 border-white dark:border-slate-800 shadow-inner relative">
                 {imageUrl ? (
-                    <img src={imageUrl} alt="Photo de profil" className="w-full h-full object-cover" />
+                    <img src={imageUrl} alt="Photo de profil" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-14 w-14 text-slate-400 mt-2" viewBox="0 0 24 24" fill="currentColor">
                         <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 a4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
@@ -65,10 +77,20 @@ const ProfileAvatar = ({ imageUrl, onUpload }: { imageUrl?: string | null, onUpl
                 )}
             </div>
         </div>
+        {isFaceVerified && (
+          <div 
+            className="absolute top-0 right-0 w-7 h-7 rounded-full bg-emerald-500 text-white flex items-center justify-center border-2 border-white shadow-md z-10"
+            title="Visage et identité certifiés"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        )}
         <button 
             type="button"
             onClick={onUpload}
-            className="absolute bottom-0 right-0 w-8 h-8 rounded-full border-2 border-white bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-lg transition-all active:scale-90"
+            className="absolute bottom-0 right-0 w-8 h-8 rounded-full border-2 border-white bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-lg transition-all active:scale-90 z-10"
             title="Modifier la photo de profil"
         >
             <CameraIcon className="h-4 w-4 text-white" />
